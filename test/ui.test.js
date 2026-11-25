@@ -51,8 +51,14 @@ test('ключевые UI-стили Darcus/OCR на месте', () => {
   assert.ok(app.includes('initBugReport'), 'нет кнопки БАГ');
   assert.ok(app.includes('pickFilesForMd'), 'нет вставки файлов в Markdown');
   assert.ok(app.includes('moveProjectSelect'), 'нет перемещения между проектами');
+  assert.ok(app.includes('handleTreeSelection'), 'нет массового выделения файлов');
+  assert.ok(app.includes('initMarkdownDrop'), 'нет drag&drop файла в Markdown');
+  assert.ok(app.includes('darcusAutoApplyOn'), 'нет режима Darcus без подтверждения');
+  assert.ok(app.includes('startBrowserSpeechRecognition'), 'нет голосового ввода браузера');
   const html = read('index.html');
   assert.ok(html.includes('id="bugBtn"') && html.includes('id="bugModal"'), 'нет кнопки/модалки БАГ');
   assert.ok(html.includes('data-md="attach"'), 'нет кнопки прикрепления файла в редакторе');
   assert.ok(html.includes('id="moveProjectSelect"'), 'нет выбора проекта в перемещении');
+  assert.ok(html.includes('id="darcusChatPanel"') && html.includes('id="darcusVoiceModeBtn"'), 'нет списка чатов/голосового режима');
+  assert.ok(html.includes('id="darcusAutoApplyBtn"'), 'нет кнопки авто-применения Darcus');
 });

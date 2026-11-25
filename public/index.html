@@ -329,14 +329,29 @@
 
     <div class="chat-view darcus-view" id="chatViewDarcus" style="display:none">
       <div class="darcus-chats-bar" id="darcusChatsBar">
-        <select id="darcusChatSelect" title="Выбрать чат"></select>
+        <button type="button" id="darcusChatSelectBtn" class="darcus-chat-picker-btn" title="Список чатов">
+          <span id="darcusChatTitle">Новый чат</span>
+          <svg class="ico sm"><use href="#i-chevron-down"/></svg>
+        </button>
         <button id="darcusChatNewBtn" title="Новый чат"><svg class="ico sm"><use href="#i-plus"/></svg></button>
-        <button id="darcusChatDelBtn" title="Удалить чат"><svg class="ico sm"><use href="#i-trash-2"/></svg></button>
+        <button id="darcusChatDelBtn" title="Удалить текущий чат"><svg class="ico sm"><use href="#i-trash-2"/></svg></button>
+        <button id="darcusVoiceModeBtn" class="voice-mode-btn" title="Голосовой режим: ответы озвучиваются, микрофон сам отправляет запрос">🔊 Голос</button>
+        <div id="darcusChatPanel" class="darcus-chat-panel" hidden>
+          <div class="darcus-chat-search-wrap">
+            <svg class="ico sm"><use href="#i-search"/></svg>
+            <input id="darcusChatSearch" placeholder="Поиск чата…" autocomplete="off">
+          </div>
+          <div id="darcusChatList" class="darcus-chat-list"></div>
+          <div class="darcus-chat-panel-foot">
+            <button type="button" id="darcusChatDeleteAll" class="danger-btn">Удалить все чаты</button>
+          </div>
+        </div>
       </div>
       <div class="darcus-head">
         <span class="darcus-brand"><svg class="ico sm"><use href="#i-star"/></svg> Darcus</span>
         <span class="darcus-sub" id="darcusSubBadge"></span>
         <select id="darcusStylePreset" class="darcus-style-select" title="Стиль ответа"></select>
+        <button id="darcusAutoApplyBtn" class="voice-mode-btn" title="Применять действия Darcus без подтверждения">⚡ Авто</button>
       </div>
       <div id="darcusLock" class="darcus-lock" style="display:none">
         <p><b>Darcus</b> — встроенный ИИ-ассистент.</p>

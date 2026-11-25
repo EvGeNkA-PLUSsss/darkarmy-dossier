@@ -528,6 +528,64 @@ test('баг-репорт: пользователь отправляет скр�
   assert.ok(!after.body.items.some(i => i.id === created.body.id));
 });
 
+test('Darcus: чаты без лимита, без дублей пустых, удаление всех', async () => {
+  const chats = [];
+  for (let i = 0; i < 3; i++) {
+    const r = await admin.json('/api/darcus/chats', { method: 'POST' });
+    assert.equal(r.res.status, 200, JSON.stringify(r.body));
+    chats.push(r.body.chat.id);
+  }
+  // повторный POST переиспользует пустой чат
+  assert.equal(chats[0], chats[1]);
+  assert.equal(chats[1], chats[2]);
+  const del = await admin.json('/api/darcus/chats', { method: 'DELETE' });
+  assert.equal(del.res.status, 200);
+  const list = await admin.json('/api/darcus/chats');
+  assert.equal(list.body.chats.length, 0);
+});
+
+test('перемещение обновляет ссылки в Markdown и реклама умеет «на все баннеры»', async () => {
+  const fd = new FormData();
+  fd.append('file', new Blob([Buffer.from('89504e470d0a1a0a', 'hex')], { type: 'image/png' }), 'pic-ref.png');
+  fd.append('projectId', 'default');
+  const up = await admin.json('/api/upload', { method: 'POST', body: fd });
+  assert.equal(up.res.status, 200);
+  await admin.json('/api/write', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId: 'default', file: 'refs.md', content: '# x\n\n![p](pic-ref.png)\n' }),
+  });
+  const mv = await admin.json('/api/move', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: up.body.path, to: 'pics/pic-ref.png', projectId: 'default' }),
+  });
+  assert.equal(mv.res.status, 200);
+  const raw = await admin.request('/api/raw?projectId=default&path=refs.md');
+  const text = await raw.text();
+  assert.match(text, /pics\/pic-ref\.png/);
+
+  // реклама: allSlots + отключение
+  const adFd = new FormData();
+  adFd.append('file', new Blob([Buffer.from('89504e470d0a1a0a', 'hex')], { type: 'image/png' }), 'ad-unit.png');
+  const aUp = await admin.json('/api/ads/upload', { method: 'POST', body: adFd });
+  assert.equal(aUp.res.status, 200);
+  const adId = aUp.body.image.id;
+  const patch = await admin.json('/api/ads/images/' + adId, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ allSlots: true, enabled: true }),
+  });
+  assert.equal(patch.res.status, 200);
+  const serve = await admin.json('/api/ads/serve');
+  const slots = Object.entries(serve.body.slots).filter(([, s]) => s.enabled).map(([k]) => k);
+  assert.ok(slots.length > 0);
+  for (const s of slots) assert.ok((serve.body.distribution[s] || []).includes(adId), 'все баннеры должны содержать allSlots-картинку');
+  await admin.json('/api/ads/images/' + adId, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: false }),
+  });
+  const serve2 = await admin.json('/api/ads/serve');
+  assert.ok(!Object.values(serve2.body.distribution).some(ids => ids.includes(adId)));
+  await admin.json('/api/ads/images/' + adId, { method: 'DELETE' });
+});
+
 test('перемещение файла в другой проект: права, файл переезжает', async () => {
   const proj = await admin.json('/api/projects', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -542,7 +600,6 @@ test('перемещение файла в другой проект: права
   const up = await admin.json('/api/upload', { method: 'POST', body: fd });
   assert.equal(up.res.status, 200, JSON.stringify(up.body));
 
-  // участник default не может писать в чужой проект
   const member = makeClient();
   await member.login('member1', 'MemberTest123!');
   const denied = await member.json('/api/move', {

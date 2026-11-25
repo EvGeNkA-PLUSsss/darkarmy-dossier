@@ -63,19 +63,88 @@ const dlP = async (msg, def = '', title) => (window.uiDialog?.prompt ? await win
 
 /* [NEW] Голосовой ввод через Whisper */
 let _mediaRecorder = null, _mediaChunks = [], _recordingBtn = null;
+let _browserRec = null, _browserRecActive = false;
 
-function initVoiceInput() {
+async function loadVoiceCaps() {
+  try {
+    const d = await fetchJson('/api/darcus/capabilities');
+    state.voiceCaps = d;
+  } catch { state.voiceCaps = { stt: false, tts: false, lang: 'ru' }; }
+}
+function getBrowserSpeechRecognition() {
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+function startBrowserSpeechRecognition(btn) {
+  const SR = getBrowserSpeechRecognition();
+  if (!SR) return dlA('Распознавание речи не настроено: установите Whisper (WHISPER_BIN/WHISPER_MODEL) или используйте Chrome/Edge с поддержкой Web Speech API.', 'Голосовой ввод недоступен');
+  if (_browserRecActive) { try { _browserRec.stop(); } catch {} return; }
+  try {
+    const rec = new SR();
+    _browserRec = rec; _browserRecActive = true;
+    rec.lang = ((state.voiceCaps && state.voiceCaps.lang) || 'ru') + '-RU';
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    const orig = btn.innerHTML;
+    btn.dataset._origHtml = orig;
+    btn.innerHTML = icon('square','sm');
+    btn.classList.add('recording');
+    const finish = () => {
+      _browserRecActive = false;
+      btn.classList.remove('recording');
+      btn.innerHTML = orig;
+    };
+    rec.onresult = e => {
+      const text = (e.results && e.results[0] && e.results[0][0] && e.results[0][0].transcript || '').trim();
+      if (!text) return;
+      const inp = document.getElementById(btn.dataset.mic || 'darcusInput');
+      if (inp) {
+        inp.value = (inp.value ? inp.value.trimEnd() + ' ' : '') + text;
+        inp.dispatchEvent(new Event('input'));
+        try { autoGrowResize(inp); } catch {}
+        inp.focus();
+        if ((btn.dataset.mic || '') === 'darcusInput' && darcusVoiceModeOn()) {
+          const form = document.getElementById('darcusForm');
+          if (form) setTimeout(() => form.requestSubmit(), 80);
+        }
+      }
+      showToast('Распознано: ' + text.slice(0, 80));
+    };
+    rec.onerror = e => {
+      const map = { 'not-allowed': 'Доступ к микрофону запрещён. Разрешите его в настройках сайта.', 'no-speech': 'Речь не распознана — попробуйте ещё раз.', 'network': 'Нет связи с сервисом распознавания (Web Speech API).' };
+      dlA(map[e.error] || 'Ошибка распознавания: ' + e.error, 'Голосовой ввод');
+    };
+    rec.onend = finish;
+    rec.start();
+  } catch (e) {
+    _browserRecActive = false;
+    btn.classList.remove('recording');
+    dlA('Не удалось включить микрофон: ' + (e.message || e.name), 'Голосовой ввод');
+  }
+}
+async function initVoiceInput() {
   document.querySelectorAll('[data-mic]').forEach(btn => {
     if (btn._micBound) return;
     btn._micBound = true;
     btn.onclick = () => toggleRecording(btn);
   });
+  loadVoiceCaps().catch(()=>{});
 }
 
 async function toggleRecording(btn) {
+  if (_browserRecActive && _browserRec) { try { _browserRec.stop(); } catch {} return; }
   if (_mediaRecorder && _mediaRecorder.state === 'recording') {
     _mediaRecorder.stop();
     return;
+  }
+  if (!window.isSecureContext) {
+    return dlA('Микрофон доступен только по HTTPS или на localhost. Сейчас сайт открыт по HTTP (локальная сеть) — браузер блокирует запись. Для голоса откройте Dossier по HTTPS (reverse proxy) или на этом ПК через http://127.0.0.1:7561.', 'Микрофон недоступен');
+  }
+  // Если серверный Whisper не настроен — используем распознавание браузера (Chrome/Edge).
+  if (state.voiceCaps && !state.voiceCaps.stt && getBrowserSpeechRecognition()) {
+    return startBrowserSpeechRecognition(btn);
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return dlA('Браузер не поддерживает запись с микрофона. Откройте страницу в современном Chrome/Edge/Firefox.', 'Микрофон недоступен');
   }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -102,7 +171,10 @@ async function toggleRecording(btn) {
     // авт-стоп через 60 сек
     setTimeout(() => { if (_mediaRecorder && _mediaRecorder.state === 'recording') _mediaRecorder.stop(); }, 60000);
   } catch (e) {
-    dlA('Нет доступа к микрофону: ' + e.message);
+    const msg = e && e.name === 'NotAllowedError'
+      ? 'Доступ к микрофону запрещён. Разрешите его в настройках сайта (иконка замка/микрофона в адресной строке).'
+      : 'Нет доступа к микрофону: ' + (e.message || e.name || 'неизвестная ошибка');
+    dlA(msg, 'Микрофон недоступен');
   }
 }
 
@@ -122,6 +194,11 @@ async function sendAudioForTranscribe(blob, targetInputId, btn) {
       inp.dispatchEvent(new Event('input'));
       try { autoGrowResize(inp); } catch {}
       inp.focus();
+      // Голосовой режим: распознанный текст сразу отправляем в Darcus.
+      if (targetInputId === 'darcusInput' && darcusVoiceModeOn() && (d.text || '').trim()) {
+        const form = document.getElementById('darcusForm');
+        if (form) setTimeout(() => form.requestSubmit(), 80);
+      }
     }
     showToast('Распознано: ' + (d.text || '').slice(0, 80));
   } catch (e) {
@@ -131,11 +208,51 @@ async function sendAudioForTranscribe(blob, targetInputId, btn) {
   }
 }
 
+/* ---------- Голосовой режим Darcus ---------- */
+function darcusVoiceModeOn() { return localStorage.getItem('darcusVoiceMode') === '1'; }
+function updateVoiceModeBtn() {
+  const btn = document.getElementById('darcusVoiceModeBtn');
+  if (!btn) return;
+  btn.classList.toggle('active', darcusVoiceModeOn());
+  btn.title = darcusVoiceModeOn()
+    ? 'Голосовой режим включён: ответы озвучиваются, запрос можно надиктовать'
+    : 'Голосовой режим: ответы озвучиваются, микрофон сам отправляет запрос';
+}
+function setDarcusVoiceMode(on) {
+  localStorage.setItem('darcusVoiceMode', on ? '1' : '0');
+  updateVoiceModeBtn();
+  if (on) {
+    if (!window.isSecureContext)
+      dlA('Голосовой режим включён, ответы будут озвучиваться. Запись с микрофона в этом браузере недоступна по HTTP — откройте Dossier по HTTPS или на localhost.', 'Голосовой режим');
+    else showToast('Голосовой режим включён');
+  } else {
+    stopAllTts();
+    showToast('Голосовой режим выключен');
+  }
+}
+
+/* ---------- Darcus: авто-применение действий ---------- */
+function darcusAutoApplyOn() { return localStorage.getItem('darcusAutoApply') === '1'; }
+function updateDarcusAutoApplyBtn() {
+  const b = document.getElementById('darcusAutoApplyBtn');
+  if (!b) return;
+  b.classList.toggle('active', darcusAutoApplyOn());
+  b.title = darcusAutoApplyOn()
+    ? 'Авто-применение включено: Darcus меняет файлы без подтверждения'
+    : 'Применять действия Darcus без подтверждения';
+}
+function setDarcusAutoApply(on) {
+  localStorage.setItem('darcusAutoApply', on ? '1' : '0');
+  updateDarcusAutoApplyBtn();
+  showToast(on ? 'Darcus: действия без подтверждения' : 'Darcus: подтверждение включено');
+}
+
 /* ---------- State ---------- */
 const state = {
   user: null, muted: false, theme: 'dark',
   projectId: null, projects: [], currentProject: null,
   tree: [], expanded: new Set(), currentFile: null,
+  selected: new Set(), lastSelectedPath: null,
   showChanges: false, editorPreviewVisible: true,
   chatOpen: false, chatTab: 'general',
   chatCache: { general: [] }, projectMessages: [], projectTasks: [],
@@ -151,6 +268,7 @@ const state = {
   adsDebug: (localStorage.getItem('showAds') === '1'),
   ttsAudio: null,
   ttsAudioUrl: null,
+  voiceCaps: null,
   /* [NEW] tags/favorites */
   meta: { tags: {}, favorites: {} },
 
@@ -826,9 +944,134 @@ function renderTree() {
       if (files.length) await uploadFilesToRoot(files);
     });
     listEl.appendChild(empty);
+    renderBulkBar();
     return;
   }
   renderNodes(state.tree, listEl, 0);
+  renderBulkBar();
+}
+/* ---------- Массовое выделение файлов ---------- */
+function visibleTreePaths() {
+  return [...document.querySelectorAll('#tree .tree-row[data-path]')]
+    .map(r => r.dataset.path).filter(p => p);
+}
+function setTreeSelectedRow(path, on) {
+  const row = listEl.querySelector(`.tree-row[data-path="${CSS.escape(path)}"]`);
+  if (row) row.classList.toggle('selected', on);
+}
+function clearTreeSelection() {
+  state.selected.clear(); state.lastSelectedPath = null;
+  document.querySelectorAll('#tree .tree-row.selected').forEach(r => r.classList.remove('selected'));
+  renderBulkBar();
+}
+function handleTreeSelection(e, n) {
+  e.stopPropagation(); e.preventDefault();
+  const paths = visibleTreePaths();
+  const idx = paths.indexOf(n.path);
+  if (e.shiftKey && state.lastSelectedPath != null) {
+    const start = paths.indexOf(state.lastSelectedPath);
+    if (start >= 0 && idx >= 0) {
+      const [a, b] = start < idx ? [start, idx] : [idx, start];
+      for (let i = a; i <= b; i++) state.selected.add(paths[i]);
+      paths.slice(a, b + 1).forEach(p => setTreeSelectedRow(p, true));
+    }
+  } else {
+    if (state.selected.has(n.path)) state.selected.delete(n.path);
+    else state.selected.add(n.path);
+    setTreeSelectedRow(n.path, state.selected.has(n.path));
+    state.lastSelectedPath = n.path;
+  }
+  renderBulkBar();
+}
+function pruneTreeSelection() {
+  const existing = new Set(visibleTreePaths());
+  for (const p of [...state.selected]) if (!existing.has(p)) state.selected.delete(p);
+  document.querySelectorAll('#tree .tree-row.selected').forEach(r => {
+    if (!state.selected.has(r.dataset.path)) r.classList.remove('selected');
+  });
+}
+function renderBulkBar() {
+  pruneTreeSelection();
+  let bar = document.getElementById('bulkBar');
+  if (!state.selected.size) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'bulkBar'; bar.className = 'bulk-bar';
+    const sidebar = document.getElementById('sidebar');
+    sidebar.insertBefore(bar, listEl);
+  }
+  bar.innerHTML = `<div class="bulk-info">Выбрано: <b>${state.selected.size}</b></div>
+    <div class="bulk-actions">
+      <button type="button" data-bulk="move" title="Переместить выбранные">${icon('folder','sm')} Переместить</button>
+      <button type="button" data-bulk="delete" class="danger" title="Удалить выбранные">${icon('trash','sm')} Удалить</button>
+      <button type="button" data-bulk="clear" title="Снять выделение">${icon('x','sm')}</button>
+    </div>`;
+  bar.querySelector('[data-bulk="move"]').onclick = bulkMoveSelected;
+  bar.querySelector('[data-bulk="delete"]').onclick = bulkDeleteSelected;
+  bar.querySelector('[data-bulk="clear"]').onclick = clearTreeSelection;
+}
+async function bulkDeleteSelected() {
+  const paths = [...state.selected];
+  if (!paths.length) return;
+  if (!(await dlC(`Удалить выбранные файлы/папки (${paths.length})?`))) return;
+  for (const p of paths) {
+    try {
+      await fetch(`/api/delete?path=${encodeURIComponent(p)}&projectId=${encodeURIComponent(state.projectId)}`, { method: 'DELETE' });
+    } catch {}
+  }
+  clearTreeSelection(); await loadTree(); showToast(`Удалено: ${paths.length}`);
+}
+async function bulkMoveSelected() {
+  const paths = [...state.selected];
+  if (!paths.length) return;
+  const dir = (await dlP('Куда переместить выбранные? Папка в проекте (пусто = корень):', '', 'Массовое перемещение')) ?? '';
+  if (dir === null) return;
+  for (const p of paths) {
+    const base = p.split('/').pop();
+    const to = dir ? dir.replace(/\/+$/, '') + '/' + base : base;
+    try {
+      await fetch('/api/move', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: p, to, projectId: state.projectId }),
+      });
+    } catch {}
+  }
+  clearTreeSelection(); await loadTree(); showToast(`Перемещено: ${paths.length}`);
+}
+function insertMarkdownForProjectPath(areaEl, relPath) {
+  if (!areaEl || !relPath) return;
+  const name = relPath.split('/').pop();
+  const url = '/files/' + state.projectId + '/' + relPath.split('/').map(encodeURIComponent).join('/');
+  const isImg = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name);
+  const md = isImg ? `![${name}](${url})` : `[${name}](${url})`;
+  const s = areaEl.selectionStart ?? areaEl.value.length;
+  const e = areaEl.selectionEnd ?? areaEl.value.length;
+  areaEl.value = areaEl.value.slice(0, s) + md + areaEl.value.slice(e);
+  areaEl.selectionStart = areaEl.selectionEnd = s + md.length;
+  areaEl.dispatchEvent(new Event('input', { bubbles: true }));
+  areaEl.focus();
+  try { if (areaEl.id === 'inlineArea') inlineUpdatePreview(); else updatePreview(); } catch {}
+}
+function initMarkdownDrop() {
+  for (const id of ['inlineArea', 'editorArea']) {
+    const area = document.getElementById(id);
+    if (!area || area._mdDropBound) continue;
+    area._mdDropBound = true;
+    area.addEventListener('dragover', e => {
+      const types = e.dataTransfer && e.dataTransfer.types || [];
+      if ([...types].some(t => t === 'application/x-da-project-path' || t === 'text/plain')) {
+        e.preventDefault(); area.classList.add('drop-target');
+      }
+    });
+    area.addEventListener('dragleave', () => area.classList.remove('drop-target'));
+    area.addEventListener('drop', e => {
+      area.classList.remove('drop-target');
+      const p = e.dataTransfer.getData('application/x-da-project-path') || e.dataTransfer.getData('text/plain');
+      if (!p || p.includes('\n')) return;
+      e.preventDefault();
+      insertMarkdownForProjectPath(area, p);
+    });
+  }
 }
 function canEditCurrentProject() {
   const p = state.currentProject; if (!p) return false;
@@ -849,7 +1092,7 @@ function renderNodes(nodes, container, depth) {
       continue;
     }
     const row = document.createElement('div');
-    row.className = 'tree-row' + (state.currentFile === n.path ? ' active' : '');
+    row.className = 'tree-row' + (state.currentFile === n.path ? ' active' : '') + (state.selected.has(n.path) ? ' selected' : '');
     row.style.paddingLeft = (8 + depth * 16) + 'px';
     row.dataset.path = n.path; row.dataset.isDir = n.isDir ? '1' : '0';
     const isFav = !!(state.meta && state.meta.favorites && state.meta.favorites[n.path]);
@@ -858,7 +1101,12 @@ function renderNodes(nodes, container, depth) {
     if (n.isDir) {
       const expanded = state.expanded.has(n.path);
       row.innerHTML = `<span class="arrow">${expanded ? '▾' : '▸'}</span><span class="icon">${icon('folder','sm')}</span><span class="name">${escapeHtml(n.name)}</span>${isFav ? icon('star','sm') : ''}${tagHtml}`;
-      row.onclick = e => { e.stopPropagation(); state.expanded.has(n.path) ? state.expanded.delete(n.path) : state.expanded.add(n.path); renderTree(); };
+      row.onclick = e => {
+        e.stopPropagation();
+        if (e.ctrlKey || e.metaKey || e.shiftKey) return handleTreeSelection(e, n);
+        if (state.selected.size) clearTreeSelection();
+        state.expanded.has(n.path) ? state.expanded.delete(n.path) : state.expanded.add(n.path); renderTree();
+      };
       row.oncontextmenu = e => { e.preventDefault(); showCtxMenu(e.pageX, e.pageY, n, 'dir'); };
       if (canEdit) { row.draggable = true; row.dataset.draggable = '1'; }
       attachLongPress(row, (x, y) => showCtxMenu(x, y, n, 'dir'));
@@ -870,8 +1118,14 @@ function renderNodes(nodes, container, depth) {
       }
     } else {
       row.innerHTML = `<span class="arrow"></span><span class="icon">${fileIcon(n.name)}</span><span class="name">${escapeHtml(n.name)}</span>${isFav ? icon('star','sm') : ''}${tagHtml}`;
-      if (canEdit) { row.draggable = true; row.dataset.draggable = '1'; }
-      row.onclick = e => { e.stopPropagation(); openFile(n.path); };
+      // Файл можно перетащить в Markdown даже без прав редактирования (только ссылка).
+      row.draggable = true; row.dataset.draggable = '1';
+      row.onclick = e => {
+        e.stopPropagation();
+        if (e.ctrlKey || e.metaKey || e.shiftKey) return handleTreeSelection(e, n);
+        if (state.selected.size) clearTreeSelection();
+        openFile(n.path);
+      };
       row.oncontextmenu = e => { e.preventDefault(); showCtxMenu(e.pageX, e.pageY, n, 'file'); };
       attachLongPress(row, (x, y) => showCtxMenu(x, y, n, 'file'));
       container.appendChild(row);
@@ -2990,12 +3244,25 @@ function initDarcus() {
     }
   };
 
-  const sel = document.getElementById('darcusChatSelect');
-  if (sel) sel.onchange = e => { const id = e.target.value; if (id) openDarcusChat(id); };
+  const chatPickerBtn = document.getElementById('darcusChatSelectBtn');
+  if (chatPickerBtn) chatPickerBtn.onclick = (e) => { e.stopPropagation(); toggleDarcusChatPanel(); };
+  const chatSearch = document.getElementById('darcusChatSearch');
+  if (chatSearch) chatSearch.oninput = () => renderDarcusChatSelect();
+  const chatDeleteAll = document.getElementById('darcusChatDeleteAll');
+  if (chatDeleteAll) chatDeleteAll.onclick = deleteAllDarcusChats;
+  document.addEventListener('click', e => {
+    const panel = document.getElementById('darcusChatPanel');
+    const bar = document.getElementById('darcusChatsBar');
+    if (panel && !panel.hidden && !panel.contains(e.target) && bar && !bar.contains(e.target)) panel.hidden = true;
+  });
   const newBtn = document.getElementById('darcusChatNewBtn');
   if (newBtn) newBtn.onclick = () => createDarcusChat();
   const delBtn = document.getElementById('darcusChatDelBtn');
   if (delBtn) delBtn.onclick = () => deleteDarcusChat();
+  const voiceBtn = document.getElementById('darcusVoiceModeBtn');
+  if (voiceBtn) { updateVoiceModeBtn(); voiceBtn.onclick = () => { closeDarcusChatPanel(); setDarcusVoiceMode(!darcusVoiceModeOn()); }; }
+  const autoBtn = document.getElementById('darcusAutoApplyBtn');
+  if (autoBtn) { updateDarcusAutoApplyBtn(); autoBtn.onclick = () => { closeDarcusChatPanel(); setDarcusAutoApply(!darcusAutoApplyOn()); }; }
 
   /* [NEW] Stop button — добавляем динамически */
   const stopBtn = document.createElement('button');
@@ -3090,22 +3357,59 @@ async function loadDarcusChats() {
   catch (e) { console.warn('loadDarcusChats', e); }
 }
 function renderDarcusChatSelect() {
-  const sel = document.getElementById('darcusChatSelect'); if (!sel) return;
-  sel.innerHTML = '';
+  const list = document.getElementById('darcusChatList');
+  const titleEl = document.getElementById('darcusChatTitle');
   const chats = state.darcusChats || [];
-  if (!chats.length) { const o = document.createElement('option'); o.value = ''; o.textContent = '— чатов нет —'; sel.appendChild(o); return; }
-  for (const c of chats) {
-    const o = document.createElement('option');
-    o.value = c.id; o.textContent = (c.title || 'Чат').slice(0, 40);
-    if (c.id === state.darcusCurrentChatId) o.selected = true;
-    sel.appendChild(o);
+  const cur = chats.find(c => c.id === state.darcusCurrentChatId);
+  if (titleEl) titleEl.textContent = cur ? (cur.title || 'Чат') : 'Новый чат';
+  if (!list) return;
+  const q = (document.getElementById('darcusChatSearch')?.value || '').trim().toLowerCase();
+  const filtered = q ? chats.filter(c => (c.title || '').toLowerCase().includes(q)) : chats;
+  list.innerHTML = '';
+  if (!filtered.length) {
+    list.innerHTML = '<div class="darcus-chat-empty">' + (q ? 'Ничего не найдено' : 'Чатов пока нет') + '</div>';
+    return;
   }
+  for (const c of filtered) {
+    const item = document.createElement('div');
+    item.className = 'darcus-chat-item' + (c.id === state.darcusCurrentChatId ? ' active' : '');
+    item.innerHTML = `<span class="darcus-chat-item-title">${escapeHtml((c.title || 'Чат').slice(0, 80))}</span>
+      <span class="darcus-chat-item-meta">${c.messagesCount || 0} сообщ.</span>`;
+    item.onclick = () => { closeDarcusChatPanel(); openDarcusChat(c.id); };
+    list.appendChild(item);
+  }
+}
+function toggleDarcusChatPanel() {
+  const panel = document.getElementById('darcusChatPanel');
+  if (!panel) return;
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) {
+    renderDarcusChatSelect();
+    setTimeout(() => document.getElementById('darcusChatSearch')?.focus(), 30);
+  }
+}
+function closeDarcusChatPanel() {
+  const panel = document.getElementById('darcusChatPanel');
+  if (panel) panel.hidden = true;
+}
+async function deleteAllDarcusChats() {
+  if (!(await dlC('Удалить все ваши чаты Darcus? Это необратимо.'))) return;
+  try {
+    const d = await fetchJson('/api/darcus/chats', { method: 'DELETE' });
+    state.darcusChats = []; state.darcusCurrentChatId = null; state.darcus.messages = [];
+    closeDarcusChatPanel();
+    renderDarcusChatSelect(); renderDarcusMessages(); refreshDarcusView();
+    showToast('Все чаты удалены' + (d.removed ? ` (${d.removed})` : ''));
+  } catch (e) { dlA('Не удалось удалить чаты: ' + e.message); }
 }
 async function createDarcusChat() {
   try {
     const d = await fetchJson('/api/darcus/chats', { method: 'POST' });
     state.darcusCurrentChatId = d.chat.id; state.darcus.messages = [];
-    await loadDarcusChats(); renderDarcusMessages(); refreshDarcusView();
+    closeDarcusChatPanel();
+    await loadDarcusChats();
+    if (d.reused) { try { const full = await fetchJson('/api/darcus/chats/' + encodeURIComponent(d.chat.id)); state.darcus.messages = (full.chat.messages || []).map(m => ({ id: m.id, role: m.role, content: m.content, attachments: m.attachments || [], sources: m.sources || [], web: m.web || [], wiki: m.wiki || [] })); } catch {} }
+    renderDarcusMessages(); refreshDarcusView();
   } catch (e) { dlA('Не удалось создать чат: ' + e.message); }
 }
 async function deleteDarcusChat() {
@@ -3123,6 +3427,7 @@ async function openDarcusChat(id) {
   try {
     const d = await fetchJson('/api/darcus/chats/' + encodeURIComponent(id));
     state.darcusCurrentChatId = id;
+    closeDarcusChatPanel();
     state.darcus.messages = (d.chat.messages || []).map(m => ({
       id: m.id, role: m.role, content: m.content,
       attachments: m.attachments || [],
@@ -3305,6 +3610,13 @@ async function sendDarcusQuery(query, attachments) {
     if (stopBtn) stopBtn.style.display = 'none';
     renderDarcusMessages();
     loadDarcusChats().catch(()=>{});
+    // Голосовой режим: озвучиваем последний ответ Darcus.
+    if (darcusVoiceModeOn()) {
+      const lastMsg = [...state.darcus.messages].reverse().find(m => m.role !== 'user' && (m.content || '').trim());
+      if (lastMsg) setTimeout(() => {
+        try { toggleSpeakMessage(lastMsg.id, stripAiActions(lastMsg.content || ''), null); } catch {}
+      }, 350);
+    }
     // [NEW] Обработка запросов ИИ на изменение файлов
     try { await handleAiActionsFromAnswer(msgEl.content); } catch (e) { console.warn('ai-action', e); }
   }
@@ -3921,6 +4233,7 @@ async function initExtensions() {
   initOcrToggle();
   initDarcusGen();
   initBugReport();
+  initMarkdownDrop();
   initProfileExt();
   initAds();
   // [FIX] Привязка кнопки «Кратко»
@@ -4497,12 +4810,12 @@ async function runAiAction(act) {
   };
   const label = LBL[type] || `выполнить «${type}»`;
 
-  // Подтверждение пользователя (всегда, до записи на диск)
+  // Подтверждение пользователя (либо авто-режим из настроек Darcus)
   let preview = '';
   if ((type === 'create' || type === 'edit') && content) {
     preview = '\n\nСодержимое (начало):\n' + content.slice(0, 400) + (content.length > 400 ? '\n…' : '');
   }
-  const ok = await dlC(
+  const ok = darcusAutoApplyOn() ? true : await dlC(
     `Darcus предлагает ${label}:\n\n${path || from + ' → ' + to}${preview}\n\nПрименить действие?`,
     'Действие Darcus — подтверждение'
   );

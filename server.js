@@ -1724,6 +1724,10 @@ app.post('/api/rename', requireAuth, projectGuard('edit', 'body'), (req, res) =>
   // Старый путь больше не существует — выкидываем его чанки из семантического кэша.
   try { darcus.invalidateFileCache(req.project.id, rel); } catch {}
   logChange({ user: req.user.username, action: 'rename', file: newRel, from: rel, projectId: req.project.id });
+  try {
+    const n = updateMarkdownReferences(req.project, rel, newRel);
+    if (n) logger.info({ files: n, from: rel, to: newRel }, 'markdown references updated after rename');
+  } catch (e) { logger.warn({ err: e.message }, 'markdown references update failed'); }
   res.json({ ok: true, path: newRel });
 });
 
@@ -1842,6 +1846,72 @@ function moveFsSync(src, dst) {
   }
 }
 
+/* Обновление ссылок в Markdown при перемещении/переименовании файла.
+   Понимает относительные ссылки, /files/<project>/<path>, HTML <img src> и ![[...]].
+   Для переноса в другой проект ссылка становится абсолютной на новый проект. */
+function listMarkdownFiles(root, rel = '', acc = [], limit = 3000) {
+  if (acc.length >= limit) return acc;
+  let entries;
+  try { entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true }); } catch { return acc; }
+  for (const e of entries) {
+    if (acc.length >= limit) break;
+    if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+    const childRel = rel ? rel + '/' + e.name : e.name;
+    if (e.isDirectory()) listMarkdownFiles(root, childRel, acc, limit);
+    else if (/\.(md|markdown)$/i.test(e.name)) acc.push(childRel);
+  }
+  return acc;
+}
+function updateMarkdownReferences(project, oldRel, newRel, targetProjectId) {
+  const root = projectFolder(project);
+  const newAbs = targetProjectId ? `/files/${targetProjectId}/${newRel}` : null;
+  const strip = p => p.replace(/^\.\//, '').replace(/\\/g, '/');
+  let changedFiles = 0;
+  for (const mdRel of listMarkdownFiles(root)) {
+    const abs = path.join(root, mdRel);
+    let st; try { st = fs.statSync(abs); } catch { continue; }
+    if (st.size > 2 * 1024 * 1024) continue;
+    let text; try { text = fs.readFileSync(abs, 'utf8'); } catch { continue; }
+    const mdDir = path.posix.dirname(mdRel.replace(/\\/g, '/'));
+    const relOld = mdDir === '.' ? oldRel : path.posix.relative(mdDir, oldRel);
+    const relNew = mdDir === '.' ? newRel : path.posix.relative(mdDir, newRel);
+    const replacement = newAbs || (relNew || path.posix.basename(newRel));
+    const mapDest = (dest) => {
+      if (!dest) return dest;
+      let d = dest;
+      const q = d.startsWith('<') && d.endsWith('>');
+      if (q) d = d.slice(1, -1);
+      const clean = strip(d);
+      const candidates = [relOld, oldRel, './' + relOld, '/files/' + project.id + '/' + oldRel];
+      for (const c of candidates) {
+        if (!c) continue;
+        if (clean === strip(c)) return q ? '<' + replacement + '>' : replacement;
+        if (clean.startsWith(strip(c) + '/'))
+          return q ? '<' + replacement + clean.slice(strip(c).length) + '>'
+                   : replacement + clean.slice(strip(c).length);
+      }
+      return dest;
+    };
+    let out = text.replace(/(!?\[[^\]]*\]\()([^)\s]+)(\s+"[^"]*")?(\))/g,
+      (m, pre, dest, title = '', close) => pre + mapDest(dest) + (title || '') + close);
+    out = out.replace(/(<img\b[^>]*\bsrc=["'])([^"']+)(["'])/gi,
+      (m, pre, dest, close) => pre + mapDest(dest) + close);
+    out = out.replace(/(!?\[\[)([^\]|#]+)([^\]]*\]\])/g,
+      (m, pre, target, rest) => {
+        const t = strip(target);
+        const mapped = (t === relOld || t === oldRel) ? (newAbs || replacement)
+          : (t.startsWith(relOld + '/') || t.startsWith(oldRel + '/'))
+            ? (newAbs || replacement) + t.slice((t.startsWith(relOld + '/') ? relOld : oldRel).length)
+            : null;
+        return mapped ? pre + mapped + rest : m;
+      });
+    if (out !== text) {
+      try { fs.writeFileSync(abs, out, 'utf8'); changedFiles++; } catch {}
+    }
+  }
+  return changedFiles;
+}
+
 app.post('/api/move', requireAuth, projectGuard('edit', 'body'), (req, res) => {
   const { from, to, targetProjectId } = req.body || {};
   if (!from || !to) return res.status(400).json({ error: 'bad input' });
@@ -1884,6 +1954,12 @@ app.post('/api/move', requireAuth, projectGuard('edit', 'body'), (req, res) => {
     projectId: req.project.id,
     details: targetProject.id !== req.project.id ? `в проект «${targetProject.name}»` : undefined,
   });
+  // Ссылки в Markdown на перемещённый файл/папку не должны протухнуть.
+  try {
+    const n = updateMarkdownReferences(req.project, relFrom, relTo,
+      targetProject.id !== req.project.id ? targetProject.id : undefined);
+    if (n) logger.info({ files: n, from: relFrom, to: relTo }, 'markdown references updated after move');
+  } catch (e) { logger.warn({ err: e.message }, 'markdown references update failed'); }
   res.json({
     ok: true, path: relTo,
     projectId: targetProject.id, projectName: targetProject.name,
@@ -2749,11 +2825,14 @@ function saveAds(a) { saveDoc('ads', a); }
 function adsDistribute() {
   const a = loadAds();
   const enabled = Object.entries(a.slots).filter(([,s]) => s.enabled).map(([k]) => k);
-  const imgIds = a.images.map(i => i.id);
+  const images = (a.images || []).filter(i => i.enabled !== false);
+  const allSlots = images.filter(i => i.allSlots);
+  const regular = images.filter(i => !i.allSlots);
   const map = {};
   for (const k of enabled) map[k] = [];
-  if (enabled.length && imgIds.length) {
-    imgIds.forEach((id, i) => map[enabled[i % enabled.length]].push(id));
+  if (enabled.length) {
+    for (const k of enabled) map[k].push(...allSlots.map(i => i.id));
+    regular.forEach((im, i) => map[enabled[i % enabled.length]].push(im.id));
   }
   return { slots: a.slots, images: a.images, distribution: map };
 }
@@ -2779,6 +2858,8 @@ app.post('/api/ads/upload', requireSelfAdmin,
       originalName: safeFileName(req.file.originalname),
       size: req.file.size,
       uploadedAt: new Date().toISOString(),
+      enabled: true,
+      allSlots: false,
     };
     a.images.push(entry);
     // [FIX] Лимит снят. Отдельная защита от гигантского мусора — 5000 файлов.
@@ -2789,6 +2870,17 @@ app.post('/api/ads/upload', requireSelfAdmin,
     saveAds(a);
     res.json({ ok: true, image: entry });
   });
+
+app.patch('/api/ads/images/:id', requireSelfAdmin, (req, res) => {
+  const a = loadAds();
+  const im = (a.images || []).find(i => i.id === req.params.id);
+  if (!im) return res.status(404).json({ error: 'not found' });
+  const { enabled, allSlots } = req.body || {};
+  if (typeof enabled === 'boolean') im.enabled = enabled;
+  if (typeof allSlots === 'boolean') im.allSlots = allSlots;
+  saveAds(a);
+  res.json({ ok: true, image: im });
+});
 
 app.delete('/api/ads/images/:id', requireSelfAdmin, (req, res) => {
   const a = loadAds();
@@ -3323,6 +3415,16 @@ app.post('/api/darcus/summarize', requireAuth, requireSubscription, rateLimitDar
 });
 
 /* ---------- TTS прокси ---------- */
+app.get('/api/darcus/capabilities', requireAuth, (req, res) => {
+  let ai = {};
+  try { ai = darcus.loadAiConfig(); } catch {}
+  res.json({
+    stt: !!(ai.whisper && ai.whisper.binaryPath && ai.whisper.modelPath),
+    tts: !!(ai.tts && ai.tts.url),
+    lang: (ai.whisper && ai.whisper.language) || 'ru',
+  });
+});
+
 app.post('/api/darcus/tts', requireAuth, requireSubscription, rateLimitDarcus, async (req, res) => {
   const { text, voice, format } = req.body || {};
   if (!text || typeof text !== 'string') return res.status(400).json({ error: 'empty' });
@@ -3562,19 +3664,30 @@ function getUserChats(username) {
 }
 
 app.get('/api/darcus/chats', requireAuth, (req, res) => {
-  const list = getUserChats(req.user.username).map(c => ({
+  const d = loadDarcusChats();
+  const all = d.chats[req.user.username] || [];
+  // Пустые дубли «Новый чат» не нужны в списке (один пустой оставляем).
+  const nonEmpty = all.filter(c => (c.messages || []).length);
+  const list = nonEmpty.length ? nonEmpty : all;
+  if (nonEmpty.length && nonEmpty.length !== all.length) {
+    d.chats[req.user.username] = nonEmpty;
+    saveDarcusChats(d);
+  }
+  const out = list.map(c => ({
     id: c.id, title: c.title,
     createdAt: c.createdAt, updatedAt: c.updatedAt,
     messagesCount: (c.messages || []).length,
   })).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  res.json({ chats: list });
+  res.json({ chats: out });
 });
 
 app.post('/api/darcus/chats', requireAuth, (req, res) => {
   const d = loadDarcusChats();
   if (!d.chats[req.user.username]) d.chats[req.user.username] = [];
-  if (d.chats[req.user.username].length >= 50)
-    return res.status(400).json({ error: 'Максимум 50 чатов' });
+  const list = d.chats[req.user.username];
+  // Не плодим пустые «Новый чат»: если уже есть пустой — открываем его.
+  const empty = list.find(c => !(c.messages || []).length);
+  if (empty) return res.json({ chat: empty, reused: true });
   const chat = {
     id: crypto.randomUUID(),
     title: 'Новый чат',
@@ -3582,9 +3695,19 @@ app.post('/api/darcus/chats', requireAuth, (req, res) => {
     updatedAt: new Date().toISOString(),
     messages: [],
   };
-  d.chats[req.user.username].push(chat);
+  list.push(chat);
   saveDarcusChats(d);
   res.json({ chat });
+});
+
+// Удалить все чаты текущего пользователя.
+app.delete('/api/darcus/chats', requireAuth, (req, res) => {
+  const d = loadDarcusChats();
+  const n = (d.chats[req.user.username] || []).length;
+  d.chats[req.user.username] = [];
+  saveDarcusChats(d);
+  logger.info({ user: req.user.username, count: n }, 'darcus: all chats removed by user');
+  res.json({ ok: true, removed: n });
 });
 
 app.get('/api/darcus/chats/:id', requireAuth, (req, res) => {

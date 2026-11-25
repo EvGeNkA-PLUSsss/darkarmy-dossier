@@ -1024,16 +1024,56 @@ function renderAdsGrid(images) {
   for (const im of images) {
     const card = document.createElement('div');
     card.className = 'ads-card';
-    card.innerHTML = `<img src="/api/ads/file/${encodeURIComponent(im.filename)}" alt="">
+    card.innerHTML = `<img src="/api/ads/file/${encodeURIComponent(im.filename)}" alt="" loading="lazy" decoding="async">
       <div class="ads-card-meta">${escapeHtml(im.originalName)}</div>
+      <label class="ads-toggle"><input type="checkbox" data-en ${im.enabled !== false ? 'checked' : ''}> Показывать</label>
+      <label class="ads-toggle"><input type="checkbox" data-all ${im.allSlots ? 'checked' : ''}> На всех баннерах</label>
       <button class="danger" data-del="${im.id}">Удалить</button>`;
     el.appendChild(card);
+    card.querySelector('[data-en]').onchange = async e => {
+      await fetch('/api/ads/images/' + encodeURIComponent(im.id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: e.target.checked }),
+      });
+      loadAdsAdmin();
+    };
+    card.querySelector('[data-all]').onchange = async e => {
+      await fetch('/api/ads/images/' + encodeURIComponent(im.id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allSlots: e.target.checked }),
+      });
+      loadAdsAdmin();
+    };
     card.querySelector('[data-del]').onclick = async () => {
       if (!(await _confirm('Удалить картинку?'))) return;
       await fetch('/api/ads/images/' + im.id, { method: 'DELETE' });
       loadAdsAdmin();
     };
   }
+}
+/* Клиентская оптимизация баннера: уменьшаем до 1600px и жмём в JPEG. */
+function optimizeAdImage(file, maxW = 1600, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    if (!/^image\/(png|jpe?g|webp)$/i.test(file.type)) return reject(new Error('not raster'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxW / img.naturalWidth);
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        c.toBlob(b => {
+          URL.revokeObjectURL(url);
+          if (!b) return reject(new Error('canvas'));
+          resolve(new File([b], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', quality);
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode')); };
+    img.src = url;
+  });
 }
 function renderAdsDistribution(d) {
   const el = document.getElementById('adsDistribution');
@@ -1054,7 +1094,13 @@ if (_adsUploadForm) _adsUploadForm.onsubmit = async e => {
   const file = f.file.files[0];
   if (!file) return _alert('Выберите файл');
   const fd = new FormData();
-  fd.append('file', file);
+  let uploadFile = file;
+  // Оптимизация: большие PNG/JPEG пережимаем на клиенте до 1600px JPEG q0.85
+  try {
+    if (/^image\/(png|jpe?g|webp)$/i.test(file.type) && file.size > 150 * 1024)
+      uploadFile = await optimizeAdImage(file);
+  } catch {}
+  fd.append('file', uploadFile);
   const btn = f.querySelector('button[type="submit"]');
   const oldHtml = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.innerHTML = 'Загрузка…'; }
