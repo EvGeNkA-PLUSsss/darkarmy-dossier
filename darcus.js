@@ -1166,13 +1166,124 @@ async function summarizeContent(text, opts = {}) {
   }
 }
 
+/* ================== TTS: подготовка русского текста ==================
+   Silero RU не произносит латиницу и иногда пропускает цифры/аббревиатуры.
+   Переводим бренды, аббревиатуры и любые латинские слова в кириллицу,
+   числа — в слова. */
+const TTS_WORDS = [
+  [/\bDarcus[\s-]*Intelligence\b/gi, 'Даркус Интеллидженс'],
+  [/\bDark[\s-]*Army[\s-]*Dossier\b/gi, 'Дарк Арми Досье'],
+  [/\bDarkArmy\b/gi, 'Дарк Арми'],
+  [/\bDark[\s-]*Army\b/gi, 'Дарк Арми'],
+  [/\bDarcus\b/gi, 'Даркус'],
+  [/\bDossier\b/gi, 'Досье'],
+  [/\bSilero\b/gi, 'Силеро'],
+  [/\bOllama\b/gi, 'Оллама'],
+  [/\bWhisper\b/gi, 'Виспер'],
+  [/\bQwen\b/gi, 'Квен'],
+  [/\bGitHub\b/gi, 'Гитхаб'],
+  [/\bTelegram\b/gi, 'Телеграм'],
+  [/\bWindows\b/gi, 'Виндоус'],
+  [/\bChrome\b/gi, 'Хром'],
+  [/\bLinux\b/gi, 'Линукс'],
+  [/\bMarkdown\b/gi, 'Маркдаун'],
+  [/\bREADME\b/gi, 'Ридми'],
+  [/\bOCR\b/g, 'о цэ эр'],
+  [/\bSTT\b/g, 'эс тэ тэ'],
+  [/\bTTS\b/g, 'тэ тэ эс'],
+  [/\bAPI\b/g, 'а пи ай'],
+  [/\bAI\b/g, 'эй ай'],
+  [/\bURL\b/g, 'у эр эл'],
+  [/\bHTTPS\b/g, 'эйч ти ти пи эс'],
+  [/\bHTTP\b/g, 'эйч ти ти пи'],
+  [/\bJSON\b/g, 'джейсон'],
+  [/\bSQL\b/g, 'эс кью эл'],
+  [/\bPDF\b/g, 'пэ дэ эф'],
+  [/\bPNG\b/g, 'пэ эн дж'],
+  [/\bJPEG\b/g, 'джей пег'],
+  [/\bJPG\b/g, 'джей пег'],
+  [/\bGIF\b/g, 'гиф'],
+  [/\bCSV\b/g, 'си эс ви'],
+  [/\bXML\b/g, 'икс эм эл'],
+  [/\bHTML\b/g, 'эйч ти эм эл'],
+  [/\bCSS\b/g, 'си эс эс'],
+  [/\bJS\b/g, 'джей эс'],
+  [/\bGPU\b/g, 'джи пи ю'],
+  [/\bCPU\b/g, 'си пи ю'],
+  [/\bRAM\b/g, 'рам'],
+  [/\bIP\b/g, 'ай пи'],
+  [/\bID\b/g, 'ай ди'],
+  [/\bVPS\b/g, 'вэ пэ эс'],
+  [/\bCtrl\b/gi, 'контрол'],
+  [/\bShift\b/gi, 'шифт'],
+  [/\bAlt\b/gi, 'альт'],
+  [/\bEnter\b/gi, 'энтер'],
+  [/\bEscape\b/gi, 'эскейп'],
+  [/\bTab\b/gi, 'таб'],
+];
+const RU_DIGITS = ['ноль','один','два','три','четыре','пять','шесть','семь','восемь','девять'];
+const RU_TEENS = ['десять','одиннадцать','двенадцать','тринадцать','четырнадцать','пятнадцать','шестнадцать','семнадцать','восемнадцать','девятнадцать'];
+const RU_TENS = ['', '', 'двадцать','тридцать','сорок','пятьдесят','шестьдесят','семьдесят','восемьдесят','девяносто'];
+const RU_HUNDREDS = ['', 'сто','двести','триста','четыреста','пятьсот','шестьсот','семьсот','восемьсот','девятьсот'];
+function ruNumber(n) {
+  n = Math.floor(Math.abs(Number(n)));
+  if (!Number.isFinite(n) || n > 9999) return String(n);
+  if (n < 10) return RU_DIGITS[n];
+  if (n < 20) return RU_TEENS[n - 10];
+  if (n < 100) return (RU_TENS[Math.floor(n / 10)] + (n % 10 ? ' ' + RU_DIGITS[n % 10] : '')).trim();
+  if (n < 1000) return (RU_HUNDREDS[Math.floor(n / 100)] + (n % 100 ? ' ' + ruNumber(n % 100) : '')).trim();
+  const th = Math.floor(n / 1000), rest = n % 1000;
+  const thWord = th === 1 ? 'одна тысяча' : th === 2 ? 'две тысячи' : th < 5 ? ruNumber(th) + ' тысячи' : ruNumber(th) + ' тысяч';
+  return (thWord + (rest ? ' ' + ruNumber(rest) : '')).trim();
+}
+const LATIN_RU = { a:'а', b:'б', c:'к', d:'д', e:'е', f:'ф', g:'г', h:'х', i:'и', j:'дж', k:'к', l:'л', m:'м', n:'н', o:'о', p:'п', q:'к', r:'р', s:'с', t:'т', u:'у', v:'в', w:'в', x:'кс', y:'и', z:'з' };
+function translitWord(w) {
+  const lower = w.toLowerCase();
+  if (lower.length === 1) {
+    return { a:'а', b:'бэ', c:'цэ', d:'дэ', e:'е', f:'эф', g:'жэ', h:'эйч', i:'и', j:'джей', k:'ка', l:'эл', m:'эм', n:'эн', o:'о', p:'пэ', q:'кью', r:'эр', s:'эс', t:'тэ', u:'у', v:'вэ', w:'дабл ю', x:'икс', y:'игрек', z:'зэт' }[lower] || lower;
+  }
+  return lower
+    .replace(/sh/g, 'ш').replace(/ch/g, 'ч').replace(/zh/g, 'ж').replace(/th/g, 'т')
+    .replace(/ph/g, 'ф').replace(/ck/g, 'к').replace(/oo/g, 'у').replace(/ee/g, 'и')
+    .replace(/[a-z]/g, ch => LATIN_RU[ch] || ch);
+}
+function prepareTtsText(input) {
+  let t = String(input || '');
+  t = t.replace(/https?:\/\/\S+/gi, ' ').replace(/```[\s\S]*?```/g, ' ').replace(/`[^`]*`/g, ' ');
+  // Ctrl+S и подобные сочетания — до замены «+» на «и»
+  const KEY_RU = { ctrl: 'контрол', shift: 'шифт', alt: 'альт', cmd: 'команд' };
+  t = t.replace(/\b(Ctrl|Shift|Alt|Cmd)\s*\+\s*([A-Za-z0-9])\b/gi,
+    (m, key, ch) => (KEY_RU[key.toLowerCase()] || key) + ' ' + translitWord(ch));
+  // бренды/аббревиатуры — до транслитерации файлов
+  for (const [re, ru] of TTS_WORDS) t = t.replace(re, ru);
+  // файлы: README.md -> ридми точка эм дэ (для оставшейся латиницы)
+  t = t.replace(/\b([A-Za-z][A-Za-z0-9_-]{0,40})\.(md|txt|png|jpe?g|pdf|docx?|xlsx?|json|csv|html|css|js|exe|zip)\b/gi,
+    (m, name, ext) => translitWord(name) + ' точка ' + translitWord(ext));
+  // расширения у уже кириллических имён: Ридми.md -> ридми точка эм дэ
+  t = t.replace(/\.(md|txt|png|jpe?g|pdf|docx?|xlsx?|json|csv|html|css|js|exe|zip)\b/gi,
+    (m, ext) => ' точка ' + translitWord(ext));
+  // даты 25.11.2026 / 2026-11-25 — до разбора версий с точкой
+  t = t.replace(/\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b/g, (m, d, mo, y) => ruNumber(d) + ' ' + ruNumber(mo) + ' ' + ruNumber(y));
+  t = t.replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (m, y, mo, d) => ruNumber(y) + ' ' + ruNumber(mo) + ' ' + ruNumber(d));
+  // версии/числа с точкой: 5.6 -> пять точка шесть
+  t = t.replace(/(\d+)[.,](\d+)/g, (m, a, b) => ruNumber(a) + ' точка ' + ruNumber(b));
+  t = t.replace(/(\d+)\s*%/g, (m, n) => ruNumber(n) + ' процентов');
+  t = t.replace(/\s*[&+]\s*/g, ' и ').replace(/\s*=\s*/g, ' равно ');
+  t = t.replace(/[A-Za-z][A-Za-z0-9_-]*/g, translitWord);
+  t = t.replace(/\d+/g, n => ruNumber(n));
+  t = t.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, ' ');
+  t = t.replace(/[•·▪▫◦‣]/g, ' ').replace(/\s+/g, ' ');
+  return t.trim();
+}
+
 /* ================== TTS proxy ================== */
 async function ttsSynthesize(text, opts = {}) {
   const cfg = loadAiConfig();
   const t = cfg.tts || {};
   if (!t.url) throw new Error('TTS сервис не настроен (TTS_URL)');
+  const spoken = prepareTtsText(text).slice(0, 5000);
   const body = JSON.stringify({
-    text: String(text || '').slice(0, 5000),
+    text: spoken || String(text || '').slice(0, 5000),
     voice: opts.voice || t.voice || 'default',
     format: opts.format || t.format || 'wav',
     language: opts.language || 'ru',
@@ -1266,6 +1377,7 @@ module.exports = {
   rerankCandidates, lexicalRerank,
   summarizeContent,
   ttsSynthesize,
+  prepareTtsText,
   transcribeAudio,
   DATA_DIR, AI_CONFIG_FILE, EMBED_CACHE_FILE,
 };
