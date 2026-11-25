@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 where node >nul 2>&1
@@ -10,13 +10,15 @@ if errorlevel 1 (
 )
 
 if not exist ".env" (
-  if exist ".env.example" (
-    copy /Y ".env.example" ".env" >nul
-    echo [WARN] .env не найден — создан из .env.example.
-    echo        Отредактируйте SESSION_SECRET и PROJECTS_ROOT перед публикацией в интернет.
-  ) else (
-    echo [WARN] .env не найден, запускаю с настройками по умолчанию.
-  )
+  echo [SETUP] .env не найден — создаю локальный конфиг разработки.
+  for /f "delims=" %%i in ('node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"') do set SECRET=%%i
+  > ".env" echo NODE_ENV=development
+  >> ".env" echo PORT=7561
+  >> ".env" echo BIND_HOST=127.0.0.1
+  >> ".env" echo SESSION_SECRET=!SECRET!
+  >> ".env" echo PROJECTS_ROOT=F:/Проекты
+  >> ".env" echo TRUST_PROXY=false
+  echo [SETUP] Готово. Для публикации в интернет: NODE_ENV=production + HTTPS reverse proxy.
 )
 
 title DarkArmy Dossier
