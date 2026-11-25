@@ -13,6 +13,12 @@ const crypto = require('crypto');
 const { execFile } = require('child_process');
 const darcus = require('./darcus');
 const extractor = require('./extract-text');
+const util = require('./src/util');
+const createSystemRouter = require('./src/routes/system');
+const {
+  safeJoin, validatePassword, decodeUploadFilename, safeFileName, isImageMime,
+  makeRateLimiter, redactUrl, STATIC_ASSET_RE, sendProjectFile,
+} = util;
 
 // [SEC][NEW] Конфиг и логгер
 const cfg = require('./config');
@@ -57,19 +63,10 @@ for (const d of [DATA_DIR, PROJECTS_ROOT, TMP_DIR, ATTACH_DIR]) {
 storage.init({ dir: DATA_DIR });
 try { for (const f of fs.readdirSync(TMP_DIR)) fs.unlinkSync(path.join(TMP_DIR, f)); } catch {}
 
-const TEXT_EXT = ['md','markdown','txt','js','json','css','html','xml','csv','log','yml','yaml','ts','sh','env','ini','conf'];
-const isTextFile = n => TEXT_EXT.includes(String(n).split('.').pop().toLowerCase());
-// Отдача файлов проекта: по умолчанию всё скачивается, инлайн — только безопасное.
-// Раньше .shtml/.xht/.svgz не попадали ни в RISKY_EXT, ни в SVG_EXT, и браузер
-// открывал их как text/html / image/svg+xml прямо в origin приложения (stored XSS).
-const INLINE_IMAGE_EXT = new Set(['png','jpg','jpeg','gif','webp','bmp','ico']);
-const INLINE_SVG_EXT   = new Set(['svg']);
-const INLINE_PDF_EXT   = new Set(['pdf']);
-const TEXT_PLAIN_EXT   = new Set([
-  'md','markdown','txt','csv','log','json','yml','yaml','ini','conf','sh','env',
-  'html','htm','shtml','xhtml','xht','xml','js','mjs','cjs','jsx','ts','tsx',
-  'vbs','hta','chm','jar','swf','css','svgz','bat','ps1','py','sql',
-]);
+const TEXT_EXT = util.TEXT_EXT;
+const isTextFile = util.isTextFile;
+// allow-list инлайн-типов и отдача файлов — в src/util.js.
+const { INLINE_IMAGE_EXT, INLINE_SVG_EXT, INLINE_PDF_EXT, TEXT_PLAIN_EXT } = util;
 
 /* ---------- JSON helpers ----------
    - атомарная запись: tmp → fsync → rename (никаких «полузаписанных» файлов);
@@ -306,40 +303,6 @@ function getActivePunishment(username, type) {
 const isBanned = u => !!getActivePunishment(u, 'ban');
 const isMuted  = u => !!getActivePunishment(u, 'mute');
 
-/* ---------- Пароли ---------- */
-const COMMON_PASSWORDS = new Set([
-  'password','password1','password123','passw0rd','p@ssw0rd','qwerty','qwerty123','qwertyuiop',
-  '123456','1234567','12345678','123456789','1234567890','111111','123123','123321','000000',
-  'abc123','abcd1234','letmein','welcome','welcome1','admin','admin123','administrator','root',
-  'toor','test','test123','testtest','qazwsx','qazwsxedc','zaq12wsx','1q2w3e4r','1qaz2wsx',
-  'iloveyou','monkey','dragon','sunshine','princess','football','baseball','superman','batman',
-  'master','shadow','michael','jennifer','trustno1','hello','hello123','pass','pass123',
-  'darkarmy','dossier','darkarmy123','qwerty1','asdfgh','asdfghjkl','zxcvbn','zxcvbnm','qwe123',
-  'polniy_p1zdets','1234','4321','0987654321','987654321','super','google','facebook'
-]);
-function validatePassword(password, username = '') {
-  const pwd = String(password || '');
-  const uname = String(username || '').trim();
-  if (pwd.length < 8) return { ok: false, error: 'Пароль должен быть минимум 8 символов' };
-  if (pwd.length > 200) return { ok: false, error: 'Пароль слишком длинный (макс. 200 символов)' };
-  if (!/[a-zа-яё]/.test(pwd)) return { ok: false, error: 'Пароль должен содержать строчную букву' };
-  if (!/[A-ZА-ЯЁ]/.test(pwd)) return { ok: false, error: 'Пароль должен содержать заглавную букву' };
-  if (!/[0-9]/.test(pwd)) return { ok: false, error: 'Пароль должен содержать цифру' };
-  if (/^(.)\1+$/.test(pwd)) return { ok: false, error: 'Пароль не должен состоять из одного символа' };
-  const lower = pwd.toLowerCase();
-  const seqs = ['0123456789','9876543210','abcdefghijklmnopqrstuvwxyz',
-                'zyxwvutsrqponmlkjihgfedcba','qwertyuiop','poiuytrewq','asdfghjkl','lkjhgfdsa',
-                'zxcvbnm','mnbvcxz','йцукенгшщзхъ','ячсмитьбю'];
-  for (const s of seqs) if (s.includes(lower)) return { ok: false, error: 'Пароль не должен быть последовательностью' };
-  if (COMMON_PASSWORDS.has(lower)) return { ok: false, error: 'Такой пароль слишком распространён' };
-  if (uname) {
-    const u = uname.toLowerCase();
-    if (u.length >= 3 && lower.includes(u)) return { ok: false, error: 'Пароль не должен содержать логин' };
-    if (lower === u) return { ok: false, error: 'Пароль не должен совпадать с логином' };
-  }
-  return { ok: true };
-}
-
 /* ---------- Чаты / вложения ---------- */
 const loadProjectChats = () => loadJSON(PROJECT_CHATS_FILE, { chats: {} });
 const saveProjectChats = d => saveJSON(PROJECT_CHATS_FILE, d);
@@ -351,31 +314,6 @@ function getProjectChat(projectId) {
   if (!data.chats[projectId]) data.chats[projectId] = { messages: [], tasks: [] };
   return { data, chat: data.chats[projectId] };
 }
-function decodeUploadFilename(name) {
-  const raw = String(name || 'file');
-  // Если в строке уже есть настоящий Unicode (не только латинский-1) — не трогаем.
-  let hasHighUnicode = false;
-  for (const ch of raw) {
-    if (ch.codePointAt(0) > 0xFF) { hasHighUnicode = true; break; }
-  }
-  if (hasHighUnicode) return raw;
-  // Все символы в 0x80..0xFF → вероятно, это UTF-8, ошибочно прочитанный как latin1.
-  try {
-    const decoded = Buffer.from(raw, 'latin1').toString('utf8');
-    if (!decoded.includes('\uFFFD')) return decoded;
-  } catch {}
-  return raw;
-}
-function safeFileName(name) {
-  return path.basename(String(name || 'file'))
-    .replace(/[<>:"|?*\x00-\x1f\/\\]/g, '_').slice(0, 200) || 'file';
-}
-function isImageMime(mime, name) {
-  if (mime && mime.startsWith('image/')) return true;
-  const ext = (path.extname(name) || '').slice(1).toLowerCase();
-  return ['png','jpg','jpeg','gif','webp','bmp','svg','ico'].includes(ext);
-}
-
 /* ---------- Телеметрия (SQLite, батчами) ---------- */
 const telemetryQueue = new Map(); // username -> { events: [] }
 let telemetryFlushTimer = null;
@@ -511,15 +449,6 @@ app.use((req, res, next) => {
 });
 
 // [SEC] Access log через logger
-const STATIC_ASSET_RE = /\.(js|css|png|jpe?g|gif|webp|bmp|svg|ico|woff2?|ttf|eot|map)$/i;
-
-function redactUrl(url) {
-  // share-токены и прочие секреты не должны оседать в логах
-  return String(url)
-    .replace(/^\/s\/[^/?#]+/, '/s/[redacted]')
-    .replace(/([?&](?:token|invite|code|secret)=)[^&#]+/gi, '$1[redacted]');
-}
-
 app.use((req, res, next) => {
   const start = Date.now();
   const ip = req.ip || req.connection?.remoteAddress || '-';
@@ -631,43 +560,15 @@ function projectGuard(level = 'read', from = 'anywhere') {
     next();
   };
 }
-function safeJoin(root, rel) {
-  if (typeof rel !== 'string') throw new Error('bad path');
-  if (rel.includes('\0')) throw new Error('bad path');
-  const full = path.resolve(root, rel.replace(/^\/+/, ''));
-  if (full !== root && !full.startsWith(root + path.sep)) throw new Error('forbidden');
-  return full;
-}
-
-/* ---------- Rate limiters ---------- */
-function makeRateLimiter(windowMs, max, msg) {
-  const map = new Map();
-  // [SEC] Периодическая очистка, чтобы Map не утекал при большом числе IP
-  const cleanup = setInterval(() => {
-    const now = Date.now();
-    for (const [k, v] of map) if (now - v.first > windowMs * 2) map.delete(k);
-  }, Math.max(windowMs, 60_000));
-  if (cleanup.unref) cleanup.unref();
-
-  return (req, res, next) => {
-    // [SEC] Ключ привязан к username (если авторизован) — иначе к IP.
-    const key = req.user?.username ? `u:${req.user.username}` : `ip:${req.ip || 'unknown'}`;
-    const now = Date.now();
-    const rec = map.get(key) || { count: 0, first: now };
-    if (now - rec.first > windowMs) { rec.count = 0; rec.first = now; }
-    rec.count++;
-    map.set(key, rec);
-    if (rec.count > max)
-      return res.status(429).json({ error: msg || 'Слишком много попыток. Подождите.' });
-    next();
-  };
-}
 const rateLimitLogin     = makeRateLimiter(15 * 60 * 1000, 10, 'Слишком много попыток входа. Подождите 15 минут.');
 const rateLimitRegister  = makeRateLimiter(60 * 60 * 1000, 15, 'Слишком много попыток регистрации. Подождите час.');
 // [SEC] Новые лимиты на дорогие endpoints
 const rateLimitDarcus    = makeRateLimiter(60 * 1000, 20, 'Darcus: слишком много запросов, подождите');
 const rateLimitExpensive = makeRateLimiter(60 * 1000, 30, 'Слишком много запросов');
 const rateLimitUpload    = makeRateLimiter(60 * 1000, 30, 'Слишком много загрузок');
+
+/* ---------- История версий файлов (src/routes/history.js) ---------- */
+app.use(require('./src/routes/history')({ storage, requireAuth, projectGuard }));
 
 /* ---------- SSRF-защита ---------- */
 // [SEC] Валидация URL Ollama. Блокирует metadata-сервисы и private ranges в проде.
@@ -716,105 +617,18 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-/* ---------- Админ-дашборд: здоровье, размеры, бэкапы, модели ---------- */
-function safeDirSize(dir, depth = 0) {
-  if (depth > 4) return 0;
-  let total = 0;
-  let entries;
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return 0; }
-  for (const e of entries) {
-    const full = path.join(dir, e.name);
-    try {
-      if (e.isDirectory()) total += safeDirSize(full, depth + 1);
-      else total += fs.statSync(full).size;
-    } catch {}
-  }
-  return total;
-}
-
-function fileSize(file) {
-  try { return fs.statSync(file).size; } catch { return 0; }
-}
-
-function listBackups() {
-  let dirs = [];
-  try {
-    dirs = fs.readdirSync(cfg.backupDir, { withFileTypes: true })
-      .filter(d => d.isDirectory() && /^\d{4}-\d{2}-\d{2}T/.test(d.name))
-      .map(d => d.name)
-      .sort().reverse();
-  } catch {}
-  return dirs.slice(0, 10).map(name => {
-    const full = path.join(cfg.backupDir, name);
-    let info = {};
-    try { info = JSON.parse(fs.readFileSync(path.join(full, 'manifest.json'), 'utf8')); } catch {}
-    return {
-      name,
-      sizeBytes: safeDirSize(full),
-      createdAt: info.createdAt || name,
-      withProjects: !!info.projectsRoot,
-    };
-  });
-}
-
-const rateLimitBackup = makeRateLimiter(60 * 1000, 3, 'Бэкап: слишком часто, подождите минуту');
-
-app.get('/api/admin/dashboard', requireSelfAdmin, async (req, res) => {
-  const stats = storage.stats();
-  const ai = darcus.loadAiConfig().ollama;
-  let ping = { ok: false, error: 'не проверялось' };
-  try { ping = await darcus.ollamaPing(); } catch (e) { ping.error = e.message; }
-  const installed = Array.isArray(ping.models) ? ping.models : [];
-  const isInstalled = (name) => installed.some(i => i === name || i === name + ':latest' || i.startsWith(name + ':'));
-  const models = [
-    { role: 'Чат', key: 'chatModel', name: ai.chatModel, required: true },
-    { role: 'Vision/OCR', key: 'visionModel', name: ai.visionModel, required: false },
-    { role: 'Эмбеддинги', key: 'embedModel', name: ai.embedModel, required: false },
-    { role: 'Реранк', key: 'rerankModel', name: ai.rerankModel, required: false },
-  ].map(m => ({
-    ...m,
-    installed: !m.name ? true : isInstalled(m.name),
-  }));
-
-  res.json({
-    status: 'ok',
-    env: cfg.env,
-    node: process.version,
-    uptimeSec: Math.floor((Date.now() - SERVER_START_TIME) / 1000),
-    storage: stats,
-    sizes: {
-      db: stats.sizeBytes,
-      log: fileSize(LOG_FILE),
-      embeddings: fileSize(path.join(DATA_DIR, 'embeddings.json')),
-      ocrCache: fileSize(path.join(DATA_DIR, 'ocr-cache.json')),
-      attachments: safeDirSize(ATTACH_DIR),
-      projects: safeDirSize(PROJECTS_ROOT),
-      backups: safeDirSize(cfg.backupDir),
-    },
-    backups: listBackups(),
-    ai: {
-      reachable: !!ping.ok,
-      error: ping.error || null,
-      url: ai.url,
-      models,
-    },
-  });
-});
-
-app.post('/api/admin/backup', requireSelfAdmin, rateLimitBackup, (req, res) => {
-  const includeProjects = req.body && req.body.projects === true;
-  const args = [path.join(__dirname, 'scripts', 'backup.js'), '--dest', cfg.backupDir];
-  if (!includeProjects) args.push('--no-projects');
-  execFile(process.execPath, args, { cwd: __dirname, timeout: 180000, maxBuffer: 4 * 1024 * 1024 },
-    (err, stdout, stderr) => {
-      if (err) {
-        logger.error({ err: err.message, stderr: String(stderr).slice(0, 2000) }, 'backup failed');
-        return res.status(500).json({ ok: false, error: (String(stderr).trim().split('\n').pop()) || err.message });
-      }
-      logChange({ user: req.user.username, action: 'backup', details: includeProjects ? 'с проектами' : 'только метаданные' });
-      res.json({ ok: true, output: String(stdout).trim().split('\n').slice(-6), backups: listBackups() });
-    });
-});
+app.use(createSystemRouter({
+  cfg, storage, darcus, logger, logChange, requireSelfAdmin,
+  serverStartTime: SERVER_START_TIME,
+  paths: {
+    rootDir: __dirname,
+    dataDir: DATA_DIR,
+    projectsRoot: PROJECTS_ROOT,
+    attachDir: ATTACH_DIR,
+    logFile: LOG_FILE,
+    backupDir: cfg.backupDir,
+  },
+}));
 
 /* ---------- Auth ---------- */
 const DUMMY_HASH = bcrypt.hashSync('dummy-password-never-matches', 10);
@@ -1396,41 +1210,6 @@ app.use(express.static(path.join(__dirname, 'public'), {
       res.setHeader('Cache-Control', 'no-cache');
   },
 }));
-
-/* ---------- Отдача файлов проекта ---------- */
-function sendProjectFile(res, realPath) {
-  const ext = path.extname(realPath).slice(1).toLowerCase();
-  const base = path.basename(realPath);
-  const disposition = (type) =>
-    `${type}; filename*=UTF-8''${encodeURIComponent(base)}`;
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-
-  if (INLINE_IMAGE_EXT.has(ext)) return res.sendFile(realPath);
-
-  if (INLINE_SVG_EXT.has(ext)) {
-    // SVG может содержать скрипты: отдаём инлайн только с закрытым CSP.
-    res.setHeader('Content-Type', 'image/svg+xml');
-    res.setHeader('Content-Security-Policy',
-      "default-src 'none'; style-src 'unsafe-inline'; img-src data:");
-    return res.sendFile(realPath);
-  }
-
-  if (INLINE_PDF_EXT.has(ext)) {
-    res.setHeader('Content-Type', 'application/pdf');
-    return res.sendFile(realPath);
-  }
-
-  if (TEXT_PLAIN_EXT.has(ext)) {
-    // HTML/JS/SVGZ и прочее «рискованное» — только как текст, без исполнения.
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', disposition('inline'));
-    return res.sendFile(realPath);
-  }
-
-  res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Content-Disposition', disposition('attachment'));
-  return res.sendFile(realPath);
-}
 
 app.get('/files/:projectId/{*filePath}', requireAuth, (req, res) => {
   const project = loadProjects().projects.find(p => p.id === req.params.projectId);
@@ -2676,23 +2455,7 @@ app.post('/api/projects/:projectId/attach-file',
     res.json({ ok: true, path: rel });
   });
 
-/* ---------- Телеметрия ---------- */
-app.get('/api/telemetry', requireSelfAdmin, (req, res) => {
-  res.json({ users: storage.listTelemetryUsers() });
-});
-
-app.get('/api/telemetry/:username', requireSelfAdmin, (req, res) => {
-  const telemetry = storage.getTelemetry(req.params.username);
-  if (!telemetry.events.length) return res.status(404).json({ error: 'not found' });
-  res.json({ telemetry });
-});
-
-app.post('/api/telemetry/:username/clear', requireSelfAdmin, (req, res) => {
-  try { storage.clearTelemetry(req.params.username); res.json({ ok: true }); }
-  catch { res.status(500).json({ error: 'write error' }); }
-});
-
-/* ---------- ADS ---------- */
+/* ---------- ADS ---------- *//* ---------- ADS ---------- */
 const DEFAULT_ADS = {
   slots: {
     'topbar':         { enabled: true, interval: 15, note: 'Под топбаром' },

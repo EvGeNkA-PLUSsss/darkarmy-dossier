@@ -225,3 +225,49 @@ test('страница отдаётся с CSP без inline-скриптов и
   assert.doesNotMatch(csp, /unsafe-inline.*script-src|script-src[^;]*unsafe-inline/);
   assert.doesNotMatch(csp, /cdn\.jsdelivr/);
 });
+
+test('история версий: список, содержимое версии и скачивание', async () => {
+  // Две записи файла → две версии в журнале.
+  for (const content of ['# Версия 1\nстрока\n', '# Версия 2\nстрока\nновая строка\n']) {
+    const r = await admin.json('/api/write', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId: 'default', file: 'history-test.md', content }),
+    });
+    assert.equal(r.res.status, 200, JSON.stringify(r.body));
+  }
+  const list = await admin.json('/api/files/default/history?path=history-test.md&limit=10');
+  assert.equal(list.res.status, 200, JSON.stringify(list.body));
+  assert.ok(list.body.total >= 2, 'должно быть минимум две версии');
+  assert.equal(list.body.entries[0].file, 'history-test.md');
+  assert.equal(list.body.entries[0].before, undefined, 'список не должен тянуть содержимое');
+
+  const version = await admin.json('/api/files/default/history/' + list.body.entries[0].id);
+  assert.equal(version.res.status, 200);
+  assert.match(version.body.version.after, /Версия 2/);
+  assert.match(version.body.version.before, /Версия 1/);
+
+  const dl = await admin.request('/api/files/default/history/' + list.body.entries[0].id + '/download?side=before');
+  assert.equal(dl.status, 200);
+  assert.match(await dl.text(), /Версия 1/);
+
+  assert.equal((await admin.request('/api/files/default/history/nonexistent')).status, 404);
+});
+
+test('история версий доступна участнику проекта, но не постороннему', async () => {
+  // member1 уже создан выше; добавляем его в проект как участника с правом чтения.
+  const add = await admin.json('/api/projects/default/members', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'member1', role: 'member' }),
+  });
+  assert.ok([200, 409].includes(add.res.status), JSON.stringify(add.body));
+
+  const member = makeClient();
+  await member.login('member1', 'MemberTest123!');
+  assert.equal((await member.request('/api/files/default/history?path=history-test.md')).status, 200);
+
+  const stranger = makeClient();
+  await stranger.login('member2', 'MemberTest123!');
+  assert.equal((await stranger.request('/api/files/default/history?path=history-test.md')).status, 403);
+});
