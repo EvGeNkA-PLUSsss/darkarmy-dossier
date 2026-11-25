@@ -2782,7 +2782,8 @@ function getSubscription(username) {
 
 const requireSubscription = (req, res, next) => {
   if (!req.user) return res.status(401).json({ error: 'unauthorized' });
-  if (req.user.role === 'admin' && req.user.username === 'admin') return next();
+  // Администраторы сервиса имеют доступ к Darcus без отдельной подписки.
+  if (req.user.role === 'admin') return next();
   if (!isSubscribed(req.user.username))
     return res.status(403).json({ error: 'subscription-required' });
   next();
