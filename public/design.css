@@ -1099,6 +1099,7 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
 .tree-empty-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 .md-body .darcus-action-done {
+  cursor: pointer;
   margin: 10px 0 2px;
   padding: 8px 12px;
   border: 1px solid rgba(74, 222, 128, .45);
@@ -1108,6 +1109,8 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
   font-size: var(--fs-2);
   line-height: 1.45;
 }
+.md-body .darcus-action-done:hover { border-color: rgba(74, 222, 128, .8); background: rgba(74, 222, 128, .15); }
+.md-body .darcus-action-done.error { border-color: rgba(239,68,68,.55); background: rgba(239,68,68,.10); color: #ff9a9a; cursor: default; }
 .md-body .darcus-action-done code { color: #fff; background: rgba(0,0,0,.25); }
 .md-body .darcus-action-done a.darcus-action-link {
   color: #d7ffe6;
@@ -1138,6 +1141,26 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
 #tree { margin-top: 2px; }
 @media (max-width: 400px) {
   .sidebar-actions .side-btn .ico { display: none; }
+}
+
+@media (max-width: 900px) {
+  .darcus-head {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 6px 8px;
+    overflow: hidden;
+  }
+  .darcus-head .darcus-sub { display: none; }
+  .darcus-head .darcus-brand { font-size: 13px; }
+  .darcus-head .darcus-style-select { flex: 0 1 auto; width: 96px; max-width: 96px; }
+  #darcusAutoApplyBtn {
+    width: 30px; min-width: 30px; height: 30px; padding: 0;
+    font-size: 0; border-radius: 50%;
+  }
+  #darcusAutoApplyBtn::after { content: '⚡'; font-size: 14px; }
+  #darcusVoiceAutoSendBtn { width: 30px; min-width: 30px; height: 30px; }
+  .darcus-chats-bar { flex-wrap: nowrap; }
+  .darcus-context-bar { padding: 5px 8px; }
 }
 
 /* Кнопка «в самый низ» как в ChatGPT */

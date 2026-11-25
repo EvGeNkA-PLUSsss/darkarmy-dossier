@@ -370,7 +370,7 @@ function initVersionWatch() {
       const r = await fetch('/api/version', { cache: 'no-store' });
       if (!r.ok) return;
       const d = await r.json();
-      const v = d.build || d.version;
+      const v = (d.build || d.version || '') + '|' + (d.assets || '');
       if (!initial) { initial = v; return; }
       if (v && v !== initial) {
         reloading = true;
@@ -380,7 +380,7 @@ function initVersionWatch() {
     } catch {}
   };
   check();
-  setInterval(check, 30000);
+  setInterval(check, 15000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
 }
 
@@ -3325,7 +3325,10 @@ function initDarcus() {
   if (!document._darcusActionLinkBound) {
     document._darcusActionLinkBound = true;
     document.addEventListener('click', async e => {
-      const a = e.target && e.target.closest && e.target.closest('.darcus-action-link');
+      const a = e.target && e.target.closest && (
+        e.target.closest('.darcus-action-link') ||
+        e.target.closest('.darcus-action-done[data-path]')
+      );
       if (!a) return;
       e.preventDefault();
       const pid = a.dataset.project || state.projectId;
@@ -3368,6 +3371,13 @@ function initDarcus() {
   else form.appendChild(stopBtn);
 
   loadDarcusChats().then(() => { if (state.darcusChats.length) openDarcusChat(state.darcusChats[0].id); });
+  // Список чатов подтягивается сам (новые чаты/заголовки) без Ctrl+F5.
+  if (!state._darcusListTimer) {
+    state._darcusListTimer = setInterval(() => {
+      if (document.hidden || !state.chatOpen || state.chatTab !== 'darcus') return;
+      loadDarcusChats().catch(() => {});
+    }, 15000);
+  }
 }
 function renderDarcusAttachments() {
   const box = document.getElementById('darcusAttachPreview'); if (!box) return;
@@ -3491,7 +3501,7 @@ async function createDarcusChat() {
     updateDarcusContext(null);
     closeDarcusChatPanel();
     await loadDarcusChats();
-    if (d.reused) { try { const full = await fetchJson('/api/darcus/chats/' + encodeURIComponent(d.chat.id)); state.darcus.messages = (full.chat.messages || []).map(m => ({ id: m.id, role: m.role, content: m.content, attachments: m.attachments || [], sources: m.sources || [], web: m.web || [], wiki: m.wiki || [] })); } catch {} }
+    if (d.reused) { try { const full = await fetchJson('/api/darcus/chats/' + encodeURIComponent(d.chat.id)); state.darcus.messages = (full.chat.messages || []).map(m => ({ id: m.id, role: m.role, content: m.content, attachments: m.attachments || [], sources: m.sources || [], web: m.web || [], wiki: m.wiki || [] })); updateDarcusContext(full.chat.context || null); } catch {} }
     renderDarcusMessages(); refreshDarcusView();
   } catch (e) { dlA('Не удалось создать чат: ' + e.message); }
 }
@@ -3510,7 +3520,7 @@ async function openDarcusChat(id) {
   try {
     const d = await fetchJson('/api/darcus/chats/' + encodeURIComponent(id));
     state.darcusCurrentChatId = id;
-    updateDarcusContext(null);
+    updateDarcusContext(d.chat.context || null);
     closeDarcusChatPanel();
     state.darcus.messages = (d.chat.messages || []).map(m => ({
       id: m.id, role: m.role, content: m.content,
@@ -3768,7 +3778,18 @@ async function sendDarcusQuery(query, attachments) {
     renderDarcusMessages();
     loadDarcusChats().catch(()=>{});
     // [NEW] Обработка запросов ИИ на изменение файлов
-    try { await handleAiActionsFromAnswer(msgEl.content); } catch (e) { console.warn('ai-action', e); }
+    let actionResults = [];
+    try { actionResults = await handleAiActionsFromAnswer(msgEl.content); } catch (e) { console.warn('ai-action', e); }
+    const doneActions = (actionResults || []).filter(r => r && r.ok);
+    const failedActions = (actionResults || []).filter(r => r && !r.ok && !r.canceled);
+    if (doneActions.length || failedActions.length) {
+      // Плашку показываем только после реального выполнения/ошибки действия.
+      msgEl.content += '\n\n' + [
+        ...doneActions.map(r => ({ ok: true, type: r.type, path: r.path, projectId: r.projectId || state.projectId })),
+        ...failedActions.map(r => ({ ok: false, error: r.error || 'неизвестная ошибка' })),
+      ].map(r => `<<<ACTION_RESULT>>>${JSON.stringify(r)}<<<END ACTION_RESULT>>>`).join('\n\n');
+      renderDarcusMessages();
+    }
     // Голосовой режим: озвучиваем обычный ответ; служебная плашка действия
     // «✅ Darcus создал файл…» и HTML/теги в озвучку не попадают.
     if (darcusVoiceModeOn()) {
@@ -4973,18 +4994,20 @@ function extractAiActions(text) {
 }
 
 async function handleAiActionsFromAnswer(text) {
-  if (!text || !state.projectId) return;
+  if (!text || !state.projectId) return [];
   const actions = extractAiActions(text);
+  const results = [];
   for (const act of actions) {
-    await runAiAction(act);
+    try { results.push(await runAiAction(act)); } catch (e) { results.push({ ok: false, error: e.message }); }
   }
+  return results;
 }
 
 /* =========================================================
    [FIX] Реальное выполнение ACTION-ов от Darcus
    ========================================================= */
 async function runAiAction(act) {
-  if (!act || !state.projectId) return;
+  if (!act || !state.projectId) return { ok: false, error: 'нет проекта' };
 
   const type  = String(act.type || '').toLowerCase();
   const path  = String(act.path || '').trim().replace(/^\/+/, '');
@@ -4996,11 +5019,11 @@ async function runAiAction(act) {
   const newName = String(act.newName || '').trim();
 
   if (type === 'move') {
-    if (!from || !to) return;
+    if (!from || !to) return { ok: false, error: 'move без путей' };
   } else if (type === 'rename') {
-    if (!path || !newName) return;
+    if (!path || !newName) return { ok: false, error: 'rename без пути' };
   } else {
-    if (!path) return;
+    if (!path) return { ok: false, error: 'пустое имя файла' };
   }
 
   const LBL = {
@@ -5022,7 +5045,7 @@ async function runAiAction(act) {
     `Darcus предлагает ${label}:\n\n${path || from + ' → ' + to}${preview}\n\nПрименить действие?`,
     'Действие Darcus — подтверждение'
   );
-  if (!ok) return;
+  if (!ok) return { ok: false, canceled: true };
 
   try {
     if (type === 'create') {
@@ -5057,7 +5080,7 @@ async function runAiAction(act) {
       await loadTree();
       await openFile(d1.path);
       showToast('Darcus создал файл: ' + d1.path);
-      return;
+      return { ok: true, type: 'create', path: d1.path, projectId: state.projectId };
     }
 
     if (type === 'edit') {
@@ -5072,7 +5095,7 @@ async function runAiAction(act) {
       await loadTree();
       if (state.currentFile === path) await openFile(path);
       showToast('Darcus изменил файл: ' + path);
-      return;
+      return { ok: true, type: 'edit', path, projectId: state.projectId };
     }
 
     if (type === 'mkdir') {
@@ -5088,7 +5111,7 @@ async function runAiAction(act) {
       state.expanded.add(d.path);
       await loadTree();
       showToast('Darcus создал папку: ' + d.path);
-      return;
+      return { ok: true, type: 'mkdir', path: d.path, projectId: state.projectId };
     }
 
     if (type === 'delete') {
@@ -5101,7 +5124,7 @@ async function runAiAction(act) {
       if (state.currentFile === path) resetViewer();
       await loadTree();
       showToast('Darcus удалил: ' + path);
-      return;
+      return { ok: true, type: 'delete', path, projectId: state.projectId };
     }
     if (type === 'move') {
       if (!from || !to) throw new Error('move: нужны поля from и to');
@@ -5114,7 +5137,7 @@ async function runAiAction(act) {
       if (state.currentFile === from) state.currentFile = d.path;
       await loadTree();
       showToast('Darcus переместил: ' + d.path);
-      return;
+      return { ok: true, type: 'move', path: d.path, projectId: state.projectId };
     }
 
     if (type === 'rename') {
@@ -5130,11 +5153,13 @@ async function runAiAction(act) {
       if (state.currentFile === p) state.currentFile = d.path;
       await loadTree();
       showToast('Darcus переименовал: ' + d.path);
-      return;
+      return { ok: true, type: 'rename', path: d.path, projectId: state.projectId };
     }
     dlA('Неизвестный тип действия: ' + type);
+    return { ok: false, error: 'unknown' };
   } catch (e) {
     dlA('Darcus: ' + e.message);
+    return { ok: false, error: e.message };
   }
 }
 
@@ -5223,47 +5248,49 @@ function _persistDrafts() {
 /* =========================================================
    [FIX] Скрываем ACTION-блок в сообщениях ИИ + заменяем заглушкой
    ========================================================= */
+function _renderActionResult(rawJson) {
+  try {
+    const r = JSON.parse(rawJson);
+    if (!r) return '';
+    if (!r.ok) {
+      return `\n\n<div class="darcus-action-done error">⚠️ <b>Darcus не выполнил действие</b>${r.error ? ': ' + escapeHtml(String(r.error).slice(0, 200)) : ''}</div>\n\n`;
+    }
+    const labels = { create: 'создал файл', edit: 'изменил файл', mkdir: 'создал папку', delete: 'удалил', move: 'переместил', rename: 'переименовал' };
+    const label = labels[r.type] || 'выполнил действие';
+    const path = String(r.path || '').slice(0, 300);
+    const kind = r.type === 'mkdir' ? 'dir' : 'file';
+    const link = path
+      ? `<a href="#" class="darcus-action-link" data-project="${escapeHtml(r.projectId || state.projectId || '')}" data-path="${escapeHtml(path)}" data-kind="${kind}">${escapeHtml(path)}</a>`
+      : '';
+    return `\n\n<div class="darcus-action-done" data-project="${escapeHtml(r.projectId || state.projectId || '')}" data-path="${escapeHtml(path)}" data-kind="${kind}">✅ <b>Darcus ${label}</b>${link ? ': ' + link : ''}</div>\n\n`;
+  } catch { return ''; }
+}
 function stripAiActions(text) {
   if (!text) return '';
   let s = String(text).replace(/<\|[^|>]{0,80}\|>/g, '');
-  const labels = {
-    create: 'создал файл', edit: 'изменил файл', mkdir: 'создал папку',
-    delete: 'удалил', move: 'переместил', rename: 'переименовал',
-  };
   const markerRe = /<{2,3}\s*ACTION\s*>{2,3}/gi;
   let out = '', last = 0, m;
   while ((m = markerRe.exec(s)) !== null) {
     out += s.slice(last, m.index);
     const tail = s.slice(m.index + m[0].length).replace(/^\s*```(?:json)?\s*/i, '');
     const scanned = _scanJsonObject(tail);
-    let label = 'выполнил действие';
-    let path = '';
-    let kind = 'file';
-    if (scanned) {
-      const j = _parseActionObj(scanned.json);
-      if (j) {
-        label = labels[j.type] || label;
-        path = String(j.path || j.to || '').slice(0, 200);
-        kind = j.type === 'mkdir' ? 'dir' : 'file';
-      }
-    }
     let consumed = m[0].length + (scanned ? scanned.end : 0);
     const rest = s.slice(m.index + consumed);
     const em = rest.match(/<{2,3}\s*END\s*ACTION\s*>{2,3}/i);
     if (em) consumed += em.index + em[0].length;
-    // Кликабельная строка результата: открывает созданный/изменённый файл в Dossier.
-    const link = path
-      ? `<a href="#" class="darcus-action-link" data-project="${escapeHtml(state.projectId || '')}" data-path="${escapeHtml(path)}" data-kind="${kind}">${escapeHtml(path)}</a>`
-      : '';
-    out += `\n\n<div class="darcus-action-done">✅ <b>Darcus ${label}</b>${link ? ': ' + link : ''}</div>\n\n`;
+    // Сам ACTION-блок ничего не «подтверждает»: результат покажем только
+    // после реального выполнения (маркер ACTION_RESULT).
     last = m.index + consumed;
     markerRe.lastIndex = last;
   }
   out += s.slice(last);
   // Остатки маркеров без JSON + незакрытые хвосты.
-  return out.replace(/<{2,3}\s*(?:END\s+)?ACTION\s*>{2,3}[\s\S]*$/gi, '')
-            .replace(/^[\s\S]*<{2,3}\s*END\s*ACTION\s*>{2,3}/i, '')
-            .trim();
+  out = out.replace(/<{2,3}\s*(?:END\s+)?ACTION\s*>{2,3}[\s\S]*$/gi, '')
+           .replace(/^[\s\S]*<{2,3}\s*END\s*ACTION\s*>{2,3}/i, '');
+  // Результаты реально выполненных действий
+  out = out.replace(/<{2,3}\s*ACTION_RESULT\s*>{2,3}([\s\S]*?)<{2,3}\s*END\s*ACTION_RESULT\s*>{2,3}/gi,
+    (m, json) => _renderActionResult(json.trim()));
+  return out.trim();
 }
 
 /* =========================================================

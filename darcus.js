@@ -108,10 +108,11 @@ JSON, служебные комментарии, обёртки \`\`\`markdown �
 Никаких ACTION-блоков, JSON, приветствий и комментариев. Начинай сразу с "# ".`,
 
   vision_chat:
-`Ты — Darcus, ИИ-ассистент DarkArmy Dossier. Отвечай по-русски, в Markdown.
-Пользователь приложил изображение. Полностью распознай ВЕСЬ текст на нём (OCR),
-сохрани структуру и приведи распознанный текст в ответе. Затем ответь на вопрос.
-Если пользователь просит создать файл — в конце добавь ОДИН блок:
+`Ты — Darcus, ИИ-ассистент DarkArmy Dossier. Пользователь приложил изображение.
+1) Сначала подробно опиши изображение: что на нём, объекты, интерфейс, детали.
+2) Затем полностью распознай ВЕСЬ текст на нём (OCR), сохрани структуру и приведи его целиком.
+3) Затем ответь на вопрос пользователя, используя и описание, и распознанный текст.
+Отвечай по-русски, в Markdown. Если пользователь просит создать файл — в конце добавь ОДИН блок:
 <<<ACTION>>>{"type":"create","path":"файл.md","content":"..."}<<<END ACTION>>>
 
 Вопрос пользователя: {query}`,
@@ -281,7 +282,8 @@ async function ollamaChat(messages, opts = {}) {
     messages, stream: false,
     options: {
       temperature: opts.temperature ?? cfg.ollama.temperature,
-      num_ctx:     opts.numCtx     ?? cfg.ollama.numCtx
+      num_ctx:     opts.numCtx     ?? cfg.ollama.numCtx,
+      ...(opts.numPredict ? { num_predict: opts.numPredict } : {}),
     }
   });
   const send = () => httpRequest(cfg.ollama.url.replace(/\/$/, '') + '/api/chat',
@@ -320,7 +322,8 @@ async function ollamaChatStreamOnce(messages, opts, onChunk) {
     messages, stream: true,
     options: {
       temperature: opts.temperature ?? cfg.ollama.temperature,
-      num_ctx:     opts.numCtx     ?? cfg.ollama.numCtx
+      num_ctx:     opts.numCtx     ?? cfg.ollama.numCtx,
+      ...(opts.numPredict ? { num_predict: opts.numPredict } : {}),
     }
   });
   const url = cfg.ollama.url.replace(/\/$/, '') + '/api/chat';
@@ -1030,7 +1033,7 @@ ACTION-блок с ПОЛНЫМ содержимым. В обычном текс
 проекта и без папки проекта. Если пользователь просит показать/объяснить/обсудить —
 можно ответить текстом без ACTION.`;
 
-async function darcusAsk({ user, projects, projectId, history, query, attachments, editingFile, stylePreset, voiceMode, onChunk, onRequest }) {
+async function darcusAsk({ user, projects, projectId, history, query, attachments, editingFile, stylePreset, voiceMode, visionContext, onChunk, onRequest }) {
   const cfg = loadAiConfig();
   const project = projects.find(p => p.id === projectId);
   const subs = buildSubs({
@@ -1074,6 +1077,7 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
   if (wiki.length) webText += 'Википедия:\n' + wiki.map((w,i)=>`${i+1}. ${w.title} — ${w.snippet||''} (${w.url})`).join('\n');
 
   const ctxParts = [];
+  if (visionContext) ctxParts.push('### Ранее приложенное изображение (полное описание/OCR):\n' + String(visionContext).slice(0, 5000));
   if (ragText) ctxParts.push('### Из файлов проектов:\n' + ragText);
   if (webText) ctxParts.push('### Из внешних источников:\n' + webText);
   if (editingFile) {
@@ -1090,9 +1094,11 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
   if (preset && preset.systemSuffix) sysPrompt += preset.systemSuffix;
   sysPrompt += QUALITY_PROMPT + FILE_PROMPT;
   if (voiceMode) {
-    sysPrompt += '\n\n=== ГОЛОСОВОЙ РЕЖИМ ===\n' +
-      'Ответ будет озвучен вслух. Отвечай КРАТКО: 1–3 предложения, простой разговорный текст. ' +
+    sysPrompt += '\n\n=== ГОЛОСОВОЙ РЕЖИМ (КРИТИЧНО) ===\n' +
+      'Ответ будет озвучен вслух. КАТЕГОРИЧЕСКИ отвечай кратко: максимум 3 предложения ' +
+      '(до ~400 символов), простой разговорный текст. ' +
       'Без списков, таблиц, блоков кода, ссылок, эмодзи и длинных перечислений. ' +
+      'Сначала сразу ответ по сути, без вступлений. ' +
       'Если нужно выполнить действие с файлом — одно короткое предложение и ACTION-блок в конце.';
   }
 
@@ -1144,8 +1150,34 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
   }
   if (typeof onRequest === 'function') modelOpts.onRequest = onRequest;
 
-  let answer = await ollamaChatStream(messages, modelOpts, onChunk);
+  let answer = await ollamaChatStream(messages, modelOpts, voiceMode ? (() => {}) : onChunk);
   answer = stripSpecialTokens(answer);
+  if (voiceMode) {
+    // Голосовой режим: не даём модели «разговориться». Если в ответе есть
+    // ACTION (создание файла), не обрезаем его; иначе оставляем 1–3 фразы
+    // и убираем Markdown-разметку, которую бессмысленно читать вслух.
+    if (!/<<<\s*ACTION\s*>>>/i.test(answer)) {
+      let plain = answer
+        .replace(/^#{1,6}\s+/gm, '')
+        .replace(/^\s*[-*•]\s+/gm, '')
+        .replace(/\*\*([^*]+)\*\*/g, '$1')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/[*_>~|]+/g, ' ')
+        .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, ' ')
+        .replace(/[ \t]+/g, ' ')
+        .trim();
+      const parts = plain.split(/(?<=[.!?…])\s+/).filter(Boolean);
+      let short = parts.slice(0, 3).join(' ').trim();
+      if (!short) short = plain.slice(0, 420).trim();
+      if (short.length > 420) {
+        const cut = short.slice(0, 420);
+        const p = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+        short = cut.slice(0, p > 150 ? p + 1 : 420).trim();
+      }
+      answer = short;
+    }
+    if (typeof onChunk === 'function' && answer) { try { onChunk(answer); } catch {} }
+  }
   if (!answer.trim()) throw new Error('Модель вернула пустой ответ. Попробуйте ещё раз или выберите другую модель.');
   // Оценка занятого контекста: примерно 3.2 символа на токен для русского.
   const promptChars = messages.reduce((n, m) =>

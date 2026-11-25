@@ -679,7 +679,28 @@ app.get('/api/health', (req, res) => {
 const BUILD_ID = String(SERVER_START_TIME); // меняется при каждом рестарте сервера
 app.get('/api/version', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ version: require('./package.json').version, build: BUILD_ID });
+  // assets отпечаток: меняется при обновлении JS/CSS/HTML без рестарта сервера
+  let assets = '';
+  try {
+    const pub = path.join(__dirname, 'public');
+    let max = 0, count = 0;
+    const walk = (dir, depth = 0) => {
+      if (depth > 3) return;
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (e.name === 'vendor' || e.name === 'node_modules' || e.name.startsWith('.')) continue;
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) walk(full, depth + 1);
+        else {
+          const st = fs.statSync(full);
+          max = Math.max(max, Math.floor(st.mtimeMs));
+          count++;
+        }
+      }
+    };
+    walk(pub);
+    assets = `${max.toString(36)}-${count}`;
+  } catch {}
+  res.json({ version: require('./package.json').version, build: BUILD_ID, assets });
 });
 
 app.use(createSystemRouter({
@@ -3291,6 +3312,16 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
   res.on('close', onClientClose);
 
   try {
+  // Для последующих текстовых вопросов передаём gemma полное описание/OCR
+  // ранее приложенного к этому чату изображения.
+  let chatVisionContext = '';
+  if (chatId) {
+    try {
+      const d0 = loadDarcusChats();
+      const c0 = (d0.chats[req.user.username] || []).find(c => c.id === chatId);
+      if (c0 && c0.visionContext) chatVisionContext = String(c0.visionContext).slice(0, 6000);
+    } catch {}
+  }
   const result = await darcus.darcusAsk({
     user: req.user,
     projects,
@@ -3301,6 +3332,7 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
     editingFile: typeof editingFile === 'string' ? editingFile.slice(0, 500) : '', // [NEW]
     stylePreset: typeof stylePreset === 'string' ? stylePreset.slice(0, 40) : 'default',
     voiceMode: voiceMode === true,
+    visionContext: chatVisionContext,
     onChunk: (piece) => {
       if (clientGone) return;
       try { res.write(`event: chunk\ndata: ${JSON.stringify({ text: piece })}\n\n`); } catch {}
@@ -3332,6 +3364,8 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
         if (chat.title === 'Новый чат' && chat.messages.length) {
           chat.title = q.slice(0, 60) || '📎 Вложение';
         }
+        chat.context = result.context || null;
+        if (safeAtts.some(a => a.kind === 'image')) chat.visionContext = String(result.answer || '').slice(0, 12000);
         chat.updatedAt = new Date().toISOString();
         saveDarcusChats(d);
       }
@@ -3757,6 +3791,7 @@ app.get('/api/darcus/chats', requireAuth, (req, res) => {
     id: c.id, title: c.title,
     createdAt: c.createdAt, updatedAt: c.updatedAt,
     messagesCount: (c.messages || []).length,
+    context: c.context || null,
   })).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   res.json({ chats: list });
 });
