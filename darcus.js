@@ -20,7 +20,8 @@ const DEFAULT_PROMPTS = {
 `Ты — Darcus, встроенный ИИ-ассистент системы DarkArmy Dossier.
 Отвечай на русском, если пользователь не попросил иначе.
 Формат ответа — Markdown: заголовки, списки, таблицы, блоки кода.
-Если приложены изображения — внимательно проанализируй их, выполни OCR если просят.
+Если приложено изображение — ВСЕГДА полностью распознай весь текст на нём (OCR)
+и включи распознанный текст в ответ; затем выполни просьбу пользователя.
 Если приложены текстовые файлы — учти их содержимое.
 Текущая дата: {date}, время: {time}. Пользователь: {username} ({role}). Проект: {project}.
 
@@ -57,7 +58,11 @@ const DEFAULT_PROMPTS = {
 5. Если пользователь ПРОСИТ создать файл — НЕ пиши содержимое отдельным markdown-блоком.
    Клади содержимое ТОЛЬКО внутрь ACTION-блока.
 
-6. Если пользователь просит только совет — ACTION-блок НЕ добавляй.`,
+6. Если пользователь просит только совет — ACTION-блок НЕ добавляй.
+7. JSON внутри ACTION-блока должен быть ВАЛИДНЫМ: двойные кавычки, без висячих
+   запятых, переводы строк внутри content экранируются как \n.
+8. Не оборачивай ACTION-блок в markdown-код (\`\`\`) и не добавляй текст внутрь
+   самого блока — только JSON между маркерами.`,
 
   chat:
 `Ты помогаешь пользователю работать с файлами проектов.
@@ -89,13 +94,27 @@ const DEFAULT_PROMPTS = {
 Верни ТОЛЬКО перевод, без пояснений, без кавычек.\n\n{text}`,
 
   generate_doc:
-`Создай Markdown-документ по описанию.
-Без вступительных пояснений — только Markdown, начинающийся с "# ".
-Не используй тег markdown в начале!
+`Ты создаёшь готовый Markdown-документ по описанию пользователя.
+Верни ТОЛЬКО содержимое документа: начни сразу с заголовка "# ".
+Запрещено: вступления («Создаю файл…», «Вот документ…»), ACTION-блоки,
+JSON, служебные комментарии, обёртки \`\`\`markdown и любые пояснения.
 Описание: {prompt}
 Шаблон: {template}
 Проект: {project}. Автор: {username}. Дата: {date}.
 Контекст: {context}`,
+
+  generate_doc_system:
+`Ты — технический писатель. Твоя единственная задача — выдать Markdown-документ.
+Никаких ACTION-блоков, JSON, приветствий и комментариев. Начинай сразу с "# ".`,
+
+  vision_chat:
+`Ты — Darcus, ИИ-ассистент DarkArmy Dossier. Отвечай по-русски, в Markdown.
+Пользователь приложил изображение. Полностью распознай ВЕСЬ текст на нём (OCR),
+сохрани структуру и приведи распознанный текст в ответе. Затем ответь на вопрос.
+Если пользователь просит создать файл — в конце добавь ОДИН блок:
+<<<ACTION>>>{"type":"create","path":"файл.md","content":"..."}<<<END ACTION>>>
+
+Вопрос пользователя: {query}`,
 
   summarize:
 `Верни ТОЛЬКО валидный JSON, БЕЗ markdown-обёртки, БЕЗ текста до и после.
@@ -248,6 +267,12 @@ function httpRequestBinary(url, { method='POST', headers={}, body=null } = {}, t
 }
 
 /* ---------- Ollama ---------- */
+function isTransientConnError(e) {
+  const s = String((e && (e.code || e.message)) || '');
+  return /socket hang up|ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|timeout/i.test(s);
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 async function ollamaChat(messages, opts = {}) {
   const cfg = loadAiConfig();
   const body = JSON.stringify({
@@ -258,13 +283,36 @@ async function ollamaChat(messages, opts = {}) {
       num_ctx:     opts.numCtx     ?? cfg.ollama.numCtx
     }
   });
-  const raw = await httpRequest(cfg.ollama.url.replace(/\/$/, '') + '/api/chat',
+  const send = () => httpRequest(cfg.ollama.url.replace(/\/$/, '') + '/api/chat',
     { method:'POST', headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)}, body },
     opts.timeout || cfg.ollama.timeout);
-  try { return JSON.parse(raw).message?.content || ''; } catch { return ''; }
+  let raw;
+  try {
+    raw = await send();
+  } catch (e) {
+    // Один повтор: Ollama могла перезапустить runner и сбросить соединение.
+    if (!isTransientConnError(e)) throw e;
+    await sleep(800);
+    raw = await send();
+  }
+  try { return stripSpecialTokens(JSON.parse(raw).message?.content || ''); } catch { return ''; }
 }
 
 async function ollamaChatStream(messages, opts, onChunk) {
+  let emitted = false;
+  const wrapped = (piece) => { emitted = true; try { onChunk(piece); } catch {} };
+  try {
+    return await ollamaChatStreamOnce(messages, opts, wrapped);
+  } catch (e) {
+    if (!emitted && isTransientConnError(e)) {
+      await sleep(800);
+      return ollamaChatStreamOnce(messages, opts, onChunk);
+    }
+    throw e;
+  }
+}
+
+async function ollamaChatStreamOnce(messages, opts, onChunk) {
   const cfg = loadAiConfig();
   const body = JSON.stringify({
     model: opts.model || cfg.ollama.chatModel,
@@ -658,9 +706,59 @@ function cleanBase64(b64) {
 }
 function isVisionModel(name) {
   const n = String(name || '').toLowerCase();
-  return n.includes('vision') || n.includes('llava') || n.includes('qwen2-vl') ||
-         n.includes('qwen2.5-vl') || n.includes('gemma3') || n.includes('gemma4') ||
-         n.includes('minicpm-v') || n.includes('bakllava') || n.includes('moondream');
+  if (!n) return false;
+  // qwen2.5vl / qwen25vl / qwen3-vl и т.п.; llava, pixtral, minicpm-v, moondream...
+  if (/qwen[\d.]*[\s._-]?vl/.test(n)) return true;
+  return n.includes('vision') || n.includes('llava') || n.includes('qwen-vl') ||
+         n.includes('qwen2-vl') || n.includes('qwen2.5-vl') || n.includes('gemma3') ||
+         n.includes('gemma4') || n.includes('minicpm-v') || n.includes('bakllava') ||
+         n.includes('moondream') || n.includes('pixtral') || n.includes('internvl') ||
+         n.includes('granite-vision');
+}
+
+// Кэш проверки возможностей модели через Ollama /api/show (capabilities: ["vision", ...]).
+const visionCapsCache = new Map();
+async function isVisionModelAsync(name) {
+  const key = String(name || '');
+  if (!key) return false;
+  if (isVisionModel(key)) return true;
+  if (visionCapsCache.has(key)) return visionCapsCache.get(key);
+  let ok = false;
+  try {
+    const cfg = loadAiConfig();
+    const raw = await httpRequest(cfg.ollama.url.replace(/\/$/, '') + '/api/show', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: key }),
+    }, 8000);
+    const info = JSON.parse(raw);
+    ok = Array.isArray(info.capabilities) && info.capabilities.includes('vision');
+  } catch {}
+  visionCapsCache.set(key, ok);
+  return ok;
+}
+
+// Служебные токены шаблонов Ollama (<|img|>, <|file|...|>, <|endoftext|> …)
+// не должны попадать в ответ пользователю.
+function stripSpecialTokens(text) {
+  return String(text || '')
+    .replace(/<\|[^<>]{0,100}?\|>/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+// Чистим результат генерации документа: без ACTION-блоков, markdown-обёрток и
+// вступительных фраз модели («Создаю файл…», «Вот документ…»).
+function cleanGeneratedMarkdown(raw) {
+  let t = stripSpecialTokens(raw);
+  const hadAction = /<{2,3}\s*ACTION\s*>{2,3}/i.test(t);
+  t = t.replace(/<{2,3}\s*ACTION\s*>{2,3}[\s\S]*?(?:<{2,3}\s*END\s*ACTION\s*>{2,3}|$)/gi, '').trim();
+  t = t.replace(/^```(?:markdown|md|html)?\s*\n?/i, '').replace(/\n?```\s*$/, '').trim();
+  const h = t.search(/^#\s+/m);
+  if (h > 0 && h < 800) t = t.slice(h).trim();
+  // Если модель выдала только служебное вступление + ACTION, документа нет.
+  else if (hadAction && h < 0) t = '';
+  return t;
 }
 
 async function ocrImage(absPath) {
@@ -670,15 +768,15 @@ async function ocrImage(absPath) {
   const b64 = cleanBase64(fs.readFileSync(absPath).toString('base64'));
   const prompt = applySubs(cfg.prompts.ocr, buildSubs({ mode:'ocr' }));
   const model = cfg.ollama.visionModel;
-  if (!isVisionModel(model)) {
-    return { text:'', boxes:[], error: `Модель "${model}" не является vision-моделью` };
+  if (!(await isVisionModelAsync(model))) {
+    return { text:'', boxes:[], error: `Модель "${model}" не является vision-моделью (в админке → Darcus выберите vision-модель)` };
   }
   try {
     const t = await ollamaChat([{ role:'user', content: prompt, images:[b64] }], { model });
-    if (/не могу|изображение не|не предоставлен|не вижу картинк|не получено|не удалось получить/i.test(t || '')) {
+    if (/не могу|изображение не|не предоставлен|не вижу картинк|не получено|не удалось получить|не предоставили/i.test(t || '')) {
       return { text:'', boxes:[], error:'vision-model-rejected: ' + (t || '').slice(0, 120) };
     }
-    return { text: (t || '').trim(), boxes: [] };
+    return { text: stripSpecialTokens(t), boxes: [] };
   } catch (e) { return { text:'', boxes:[], error:e.message }; }
 }
 
@@ -689,11 +787,11 @@ async function describeImage(absPath) {
   const b64 = cleanBase64(fs.readFileSync(absPath).toString('base64'));
   const prompt = applySubs(cfg.prompts.vision, buildSubs({ mode:'vision' }));
   const model = cfg.ollama.visionModel;
-  if (!isVisionModel(model)) {
-    return { description:'', text:'', boxes:[], error: `Модель "${model}" не является vision-моделью` };
+  if (!(await isVisionModelAsync(model))) {
+    return { description:'', text:'', boxes:[], error: `Модель "${model}" не является vision-моделью (в админке → Darcus выберите vision-модель)` };
   }
   try {
-    const raw = await ollamaChat([{ role:'user', content: prompt, images:[b64] }], { model });
+    const raw = stripSpecialTokens(await ollamaChat([{ role:'user', content: prompt, images:[b64] }], { model }));
     const m = raw.match(/\{[\s\S]*\}/);
     if (m) {
       try {
@@ -955,21 +1053,39 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
   const historyTrimmed = trimPart(histText, 0.25, 'история');
   const attachmentsTrimmed = trimPart(attachText || '(нет)', 0.30, 'вложения');
 
-  const messages = [
-    { role: 'system', content: sysPrompt },
-    { role: 'user',   content: applySubs(cfg.prompts.chat, {
-        ...subs, context: contextTrimmed, query, history: historyTrimmed,
-        attachments: attachmentsTrimmed
-      }) }
-  ];
+  // Для запросов с изображениями используем КОМПАКТНЫЙ промпт без отдельной
+  // system-роли: qwen2.5vl (и некоторые другие vision-модели) при длинном
+  // system-промпте теряют изображение и отвечают "<|img|>" / «картинка не
+  // предоставлена». Короткий user-промпт с картинками работает стабильно.
+  let messages;
+  let modelOpts;
   if (imageParts.length) {
-    messages[messages.length - 1].images = imageParts;
+    const visionModel = cfg.ollama.visionModel;
+    if (!(await isVisionModelAsync(visionModel))) {
+      throw new Error(`Vision-модель "${visionModel}" не поддерживает изображения. Выберите vision-модель в админке → Darcus.`);
+    }
+    const visionPrompt = applySubs(cfg.prompts.vision_chat || DEFAULT_PROMPTS.vision_chat, {
+      ...subs, query, attachments: attachmentsTrimmed,
+      // Компактный контекст: qwen2.5vl теряет изображение при длинном промпте.
+      context: contextTrimmed.slice(0, 900), history: historyTrimmed.slice(0, 600),
+    });
+    messages = [{ role: 'user', content: visionPrompt, images: imageParts }];
+    modelOpts = { model: visionModel, temperature: 0.2 };
+  } else {
+    messages = [
+      { role: 'system', content: sysPrompt },
+      { role: 'user',   content: applySubs(cfg.prompts.chat, {
+          ...subs, context: contextTrimmed, query, history: historyTrimmed,
+          attachments: attachmentsTrimmed
+        }) }
+    ];
+    modelOpts = {};
   }
-
-  const modelOpts = imageParts.length ? { model: cfg.ollama.visionModel } : {};
   if (typeof onRequest === 'function') modelOpts.onRequest = onRequest;
 
-  const answer = await ollamaChatStream(messages, modelOpts, onChunk);
+  let answer = await ollamaChatStream(messages, modelOpts, onChunk);
+  answer = stripSpecialTokens(answer);
+  if (!answer.trim()) throw new Error('Модель вернула пустой ответ. Попробуйте ещё раз или выберите другую модель.');
   return {
     answer,
     sources: rag.slice(0, 8).map(r => ({ projectId: r.projectId, projectName: r.projectName, path: r.path, kind: r.kind })),
@@ -1069,6 +1185,7 @@ async function transcribeAudio(buffer, opts = {}) {
 module.exports = {
   DEFAULT_CONFIG, DEFAULT_PROMPTS,
   loadAiConfig, saveAiConfig, applySubs, buildSubs,
+  isVisionModel, isVisionModelAsync, stripSpecialTokens, cleanGeneratedMarkdown,
   ollamaChat, ollamaChatStream, ollamaEmbed, ollamaPing,
   ocrImage, describeImage,
   ragSearch, keywordSearch, semanticSearch,

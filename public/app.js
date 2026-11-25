@@ -2762,9 +2762,12 @@ function initDarcus() {
   if (!form) return;
 
   attachBtn.onclick = () => attachInput.click();
-  attachInput.onchange = () => {
+  attachInput.onchange = async () => {
     for (const f of attachInput.files) {
-      state.darcus.attachments.push({ file: f, name: f.name, size: f.size, kind: f.type.startsWith('image/') ? 'image' : 'file', mime: f.type || '' });
+      const isImage = f.type.startsWith('image/');
+      const a = { file: f, name: f.name, size: f.size, kind: isImage ? 'image' : 'file', mime: f.type || '' };
+      if (isImage) a.thumb = await makeImageThumb(f);
+      state.darcus.attachments.push(a);
     }
     attachInput.value = ''; renderDarcusAttachments();
   };
@@ -2837,8 +2840,52 @@ function renderDarcusAttachments() {
   const list = state.darcus.attachments;
   if (!list.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
   box.style.display = '';
-  box.innerHTML = list.map(a => `<span>${icon('paperclip','sm')} ${escapeHtml(a.name)}</span>`).join('') + `<button type="button" id="darcusAttachClear">${icon('x','sm')}</button>`;
+  box.innerHTML = list.map(a => a.kind === 'image' && a.thumb
+    ? `<span class="darcus-attach-thumb"><img src="${a.thumb}" alt="${escapeHtml(a.name)}"></span>`
+    : `<span>${icon('paperclip','sm')} ${escapeHtml(a.name)}</span>`).join('') +
+    `<button type="button" id="darcusAttachClear">${icon('x','sm')}</button>`;
   document.getElementById('darcusAttachClear').onclick = () => { state.darcus.attachments = []; renderDarcusAttachments(); };
+}
+
+// Миниатюра изображения для истории чата (data URL, без сервера).
+function makeImageThumb(file, max = 480, quality = 0.72) {
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * scale));
+        c.height = Math.max(1, Math.round(img.height * scale));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', quality));
+      } catch { resolve(''); }
+      finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(''); };
+    img.src = url;
+  });
+}
+
+function openDarcusImageViewer(src, name) {
+  let el = document.getElementById('darcusImageViewer');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'darcusImageViewer';
+    el.className = 'darcus-image-viewer';
+    el.innerHTML = '<img alt=""><button type="button" data-close title="Закрыть">×</button>';
+    el.addEventListener('click', e => {
+      if (e.target === el || e.target.closest('[data-close]')) el.style.display = 'none';
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && el.style.display === 'flex') el.style.display = 'none';
+    });
+    document.body.appendChild(el);
+  }
+  el.querySelector('img').src = src;
+  el.querySelector('img').alt = name || '';
+  el.style.display = 'flex';
 }
 function refreshDarcusView() {
   const lockEl = document.getElementById('darcusLock');
@@ -2923,11 +2970,19 @@ function buildDarcusMsgEl(m) {
     let attHtml = '';
     if (Array.isArray(m.attachments) && m.attachments.length) {
       attHtml = '<div class="attachments">' + m.attachments.map(a => {
-        if (a.kind === 'image') return `<div class="attach-card">${icon('image','sm')} <span class="fname">${escapeHtml(a.name)}</span></div>`;
+        if (a.kind === 'image' && a.thumb)
+          return `<div class="attach-thumb" data-darcus-img="1" title="${escapeHtml(a.name)}"><img src="${a.thumb}" alt="${escapeHtml(a.name)}"></div>`;
+        if (a.kind === 'image')
+          return `<div class="attach-card">${icon('image','sm')} <span class="fname">${escapeHtml(a.name)}</span></div>`;
         return `<div class="attach-card">${icon('file','sm')} <span class="fname">${escapeHtml(a.name)}</span></div>`;
       }).join('') + '</div>';
     }
     el.innerHTML = `<div class="bubble"><span class="text">${escapeHtml(m.content || '')}</span>${attHtml}</div>`;
+    const imgEl = el.querySelector('.attach-thumb[data-darcus-img] img');
+    if (imgEl) {
+      const box = el.querySelector('.attach-thumb[data-darcus-img]');
+      box.onclick = () => openDarcusImageViewer(imgEl.src, m.attachments.find(a => a.kind === 'image')?.name || '');
+    }
     return el;
   }
   const stripped = stripAiActions(m.content || '');
@@ -2980,7 +3035,7 @@ async function sendDarcusQuery(query, attachments) {
   if (!state.darcusCurrentChatId) await createDarcusChat();
   const history = state.darcus.messages.filter(m => m.content).slice(-12).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
   const atts = attachments || [];
-  const userMsg = { id: crypto.randomUUID(), role: 'user', content: query, attachments: atts.map(a => ({ name: a.name, kind: a.kind, mime: a.mime, size: a.size })) };
+  const userMsg = { id: crypto.randomUUID(), role: 'user', content: query, attachments: atts.map(a => ({ name: a.name, kind: a.kind, mime: a.mime, size: a.size, thumb: a.thumb || null })) };
   const msgEl = { id: crypto.randomUUID(), role: 'assistant', content: '', sources: [], web: [], wiki: [] };
   state.darcus.messages.push(userMsg, msgEl);
   state.darcus.streaming = true;
@@ -3002,7 +3057,7 @@ async function sendDarcusQuery(query, attachments) {
       const CH = 0x8000;
       for (let i = 0; i < bytes.length; i += CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
       const b64 = btoa(bin);
-      payload.push({ name: a.name, kind: a.kind, mime: a.mime || a.file.type || '', size: a.size, data: b64 });
+      payload.push({ name: a.name, kind: a.kind, mime: a.mime || a.file.type || '', size: a.size, data: b64, thumb: a.thumb || null });
     } catch (e) { console.warn('attach read err', e); }
   }
 
@@ -4056,14 +4111,45 @@ function _parseActionObj(raw) {
   return null;
 }
 
+// Достаём ровно один JSON-объект, корректно пропуская строки и экранирование.
+// Раньше regex `\{[\s\S]*?\}` обрывался на первой `}` внутри content, и
+// ACTION-блок не выполнялся (файл создавался с сырым JSON внутри).
+function _scanJsonObject(text) {
+  const s = String(text || '');
+  let i = s.indexOf('{');
+  if (i < 0) return null;
+  if (s.slice(0, i).trim().replace(/^```(?:json)?/i, '').trim()) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let p = i; p < s.length; p++) {
+    const ch = s[p];
+    if (inStr) {
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (ch === '"') { inStr = false; }
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return { json: s.slice(i, p + 1), end: p + 1 };
+    }
+  }
+  return null;
+}
+
 function extractAiActions(text) {
   const out = [];
   if (!text) return out;
-  AI_ACTION_RE.lastIndex = 0;
+  const markerRe = /<{2,3}\s*ACTION\s*>{2,3}/gi;
   let m;
-  while ((m = AI_ACTION_RE.exec(text)) !== null) {
-    const j = _parseActionObj(m[1]);
+  while ((m = markerRe.exec(text)) !== null) {
+    const tail = text.slice(m.index + m[0].length).replace(/^\s*```(?:json)?\s*/i, '');
+    const scanned = _scanJsonObject(tail);
+    if (!scanned) continue;
+    const j = _parseActionObj(scanned.json);
     if (j) out.push(j);
+    markerRe.lastIndex = m.index + m[0].length + scanned.end;
   }
   return out;
 }
@@ -4317,32 +4403,39 @@ function _persistDrafts() {
    ========================================================= */
 function stripAiActions(text) {
   if (!text) return '';
-  return String(text)
-    .replace(/<{2,3}\s*ACTION\s*>{2,3}([\s\S]*?)<{2,3}\s*END\s*ACTION\s*>{2,3}/gi, (full) => {
-      const inner = full
-        .replace(/^<+\s*ACTION\s*>+/i, '')
-        .replace(/<+\s*END\s*ACTION\s*>+$/i, '')
-        .trim();
-      try {
-        const j = JSON.parse(inner);
-        const labels = {
-          create: 'создал файл',
-          edit:   'изменил файл',
-          mkdir:  'создал папку',
-          delete: 'удалил',
-          move:   'переместил',
-          rename: 'переименовал',
-        };
-        const label = labels[j.type] || ('выполнил ' + (j.type || 'действие'));
-        const p = String(j.path || '').slice(0, 200);
-        return `\n\n✅ *Darcus ${label}:* \`${p}\`\n\n`;
-      } catch {
-        return '\n\n✅ *Darcus выполнил действие*\n\n';
+  let s = String(text).replace(/<\|[^|>]{0,80}\|>/g, '');
+  const labels = {
+    create: 'создал файл', edit: 'изменил файл', mkdir: 'создал папку',
+    delete: 'удалил', move: 'переместил', rename: 'переименовал',
+  };
+  const markerRe = /<{2,3}\s*ACTION\s*>{2,3}/gi;
+  let out = '', last = 0, m;
+  while ((m = markerRe.exec(s)) !== null) {
+    out += s.slice(last, m.index);
+    const tail = s.slice(m.index + m[0].length).replace(/^\s*```(?:json)?\s*/i, '');
+    const scanned = _scanJsonObject(tail);
+    let label = 'выполнил действие';
+    let path = '';
+    if (scanned) {
+      const j = _parseActionObj(scanned.json);
+      if (j) {
+        label = labels[j.type] || label;
+        path = String(j.path || j.to || '').slice(0, 200);
       }
-    })
-    // Остаточные «пустые» куски <<>> ... <<>>
-    .replace(/<{2,3}\s*ACTION\s*>{2,3}[\s\S]*$/gi, '')
-    .replace(/[\s\S]*<{2,3}\s*END\s*ACTION\s*>{2,3}/gi, '');
+    }
+    let consumed = m[0].length + (scanned ? scanned.end : 0);
+    const rest = s.slice(m.index + consumed);
+    const em = rest.match(/<{2,3}\s*END\s*ACTION\s*>{2,3}/i);
+    if (em) consumed += em.index + em[0].length;
+    out += `\n\n✅ *Darcus ${label}*${path ? ': `' + path + '`' : ''}\n\n`;
+    last = m.index + consumed;
+    markerRe.lastIndex = last;
+  }
+  out += s.slice(last);
+  // Остатки маркеров без JSON + незакрытые хвосты.
+  return out.replace(/<{2,3}\s*(?:END\s+)?ACTION\s*>{2,3}[\s\S]*$/gi, '')
+            .replace(/^[\s\S]*<{2,3}\s*END\s*ACTION\s*>{2,3}/i, '')
+            .trim();
 }
 
 /* =========================================================

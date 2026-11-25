@@ -858,3 +858,72 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
   #topbar .user .ico { width: 15px; height: 15px; }
   .side-btn { font-size: var(--fs-2); }
 }
+
+/* =========================================================
+   Изображения: просмотр, OCR, Darcus-вложения
+   ========================================================= */
+#content > img,
+#content .ocr-wrap img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+#content .ocr-wrap { display: block; text-align: center; max-width: 100%; }
+#content .ocr-panel { text-align: left; }
+
+.chat-msg .attach-thumb { max-width: min(260px, 100%); }
+.chat-msg .attach-thumb img { object-fit: contain; background: var(--surface-2); max-height: 260px; }
+
+.chat-msg.darcus .attachments { width: 100%; }
+.chat-msg.darcus.mine .attach-thumb { border-color: rgba(255,255,255,.28); }
+.chat-msg.darcus .attach-thumb { cursor: zoom-in; }
+
+.darcus-attach-thumb {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.darcus-attach-thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+.darcus-image-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 9600;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, .82);
+  backdrop-filter: blur(4px);
+}
+.darcus-image-viewer img {
+  max-width: min(100%, 1100px);
+  max-height: calc(100dvh - 48px);
+  border-radius: var(--radius-md);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .55);
+}
+.darcus-image-viewer button {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+@media (max-width: 900px) {
+  .darcus-image-viewer { padding: 12px; }
+  .darcus-image-viewer img { max-height: calc(100dvh - 24px); }
+}

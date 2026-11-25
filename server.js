@@ -3044,6 +3044,9 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
             mime: String(a.mime || '').slice(0, 100),
             size: parseInt(a.size, 10) || 0,
             data,
+            // Миниатюра для истории чата (data URL, генерируется на клиенте).
+            thumb: (typeof a.thumb === 'string' && a.thumb.length <= 300000 &&
+                    /^data:image\/(png|jpe?g|webp);base64,/i.test(a.thumb)) ? a.thumb : null,
           };
         })
       : [];
@@ -3064,13 +3067,17 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
 
   // Если клиент закрыл вкладку/оборвал соединение — останавливаем генерацию,
   // чтобы Ollama не держала GPU и сокет бесконечно.
+  // ВАЖНО: слушаем закрытие ОТВЕТА, а не запроса: 'close' у req срабатывает
+  // сразу после чтения тела POST, из-за чего запрос к Ollama убивался
+  // мгновенно и в чат приходила ошибка "socket hang up".
   let ollamaReq = null;
   let clientGone = false;
   const onClientClose = () => {
+    if (res.writableEnded) return;
     clientGone = true;
     if (ollamaReq) { try { ollamaReq.destroy(new Error('client disconnected')); } catch {} }
   };
-  req.on('close', onClientClose);
+  res.on('close', onClientClose);
 
   try {
   const result = await darcus.darcusAsk({
@@ -3098,7 +3105,10 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
         const userMsg = {
           id: crypto.randomUUID(), role: 'user', content: q,
           timestamp: new Date().toISOString(),
-          attachments: safeAtts.map(a => ({ name: a.name, kind: a.kind, mime: a.mime, size: a.size })),
+          attachments: safeAtts.map(a => ({
+            name: a.name, kind: a.kind, mime: a.mime, size: a.size,
+            ...(a.thumb ? { thumb: a.thumb } : {}),
+          })),
         };
         const aiMsg = {
           id: crypto.randomUUID(), role: 'assistant', content: result.answer,
@@ -3117,8 +3127,10 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
 
     res.write(`event: done\ndata: ${JSON.stringify({ sources: result.sources, web: result.web, wiki: result.wiki })}\n\n`);
   } catch (e) {
+    logger.warn({ err: e.message, user: req.user.username }, 'darcus chat failed');
     res.write(`event: error\ndata: ${JSON.stringify({ error: e.message })}\n\n`);
   }
+  res.off('close', onClientClose);
   res.end();
 });
 
@@ -3219,6 +3231,10 @@ app.post(
   }
 );
 
+const DEFAULT_GENERATE_DOC_SYSTEM =
+  'Ты — технический писатель. Твоя единственная задача — выдать Markdown-документ. ' +
+  'Никаких ACTION-блоков, JSON, приветствий и комментариев. Начинай сразу с "# ".';
+
 app.post('/api/darcus/generate-doc', requireAuth, requireSubscription, rateLimitDarcus, async (req, res) => {
   const { prompt: userPrompt, template, projectId, dir = '', name } = req.body || {};
   if (!userPrompt || typeof userPrompt !== 'string') return res.status(400).json({ error: 'empty' });
@@ -3238,15 +3254,19 @@ app.post('/api/darcus/generate-doc', requireAuth, requireSubscription, rateLimit
     username: req.user.username, role: req.user.role,
     project: project.name, mode: 'generate_doc',
   });
-  const sysPrompt = darcus.applySubs(cfgAi.prompts.system, subs);
+  const sysPrompt = darcus.applySubs(
+    cfgAi.prompts.generate_doc_system || DEFAULT_GENERATE_DOC_SYSTEM, subs);
   const prompt = darcus.applySubs(cfgAi.prompts.generate_doc, {
     ...subs, prompt: userPrompt, template: templateText, context,
   });
   try {
-    const md = await darcus.ollamaChat([
+    const raw = await darcus.ollamaChat([
       { role: 'system', content: sysPrompt },
       { role: 'user',   content: prompt },
     ], { temperature: 0.8 });
+    // Модель может добавить ACTION-блок или вступление — в документ это не должно попасть.
+    const md = darcus.cleanGeneratedMarkdown(raw);
+    if (!md) return res.status(502).json({ error: 'Модель вернула пустой документ. Попробуйте ещё раз.' });
     let fileName = String(name).trim();
     if (!fileName.toLowerCase().endsWith('.md')) fileName += '.md';
     fileName = fileName.replace(/[<>:"|?*\x00-\x1f\/\\]/g, '_').slice(0, 100);

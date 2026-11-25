@@ -67,6 +67,10 @@ ollama pull nomic-embed-text    # эмбеддинги для семантиче
 
 Модели задаются в **Админка → Darcus** (или `data/ai-config.json`):
 `chatModel`, `visionModel`, `embedModel`, `rerankModel`.
+Vision-модель для OCR/анализа фото должна поддерживать изображения: `gemma4:e4b`,
+`qwen2.5vl:3b`, `llava`, `minicpm-v`, `pixtral` и т.п. (проверяется по имени и
+через `/api/show` Ollama). Для запросов с изображением Darcus использует компактный
+промпт — так qwen2.5vl стабильно распознаёт текст.
 Если embedding-модель недоступна, семантика деградирует до keyword-поиска (без падений).
 Whisper и TTS включаются переменными `WHISPER_BIN`, `WHISPER_MODEL`, `TTS_URL`;
 без них голосовой ввод отключается, а озвучка идёт через браузер.
