@@ -63,6 +63,7 @@ module.exports = {
     logFileMaxBytes: 10 * 1024 * 1024,
     telemetryMaxEvents: 2_000,
     telemetryFlushMs: 2_000,
+    loginMaxAttempts: parseInt(process.env.LOGIN_MAX_ATTEMPTS, 10) || 10,
     maxSsePerUser: 5,
   },
   darcus: {

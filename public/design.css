@@ -566,6 +566,30 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
 .dash-chip.warn { background: var(--badge-warn-bg); color: var(--badge-warn-fg); }
 .dash-chip.muted { background: var(--badge-muted-bg); color: var(--badge-muted-fg); }
 
+/* ---------- Глобальный поиск: секции ---------- */
+.search-summary { margin-bottom: var(--sp-2); }
+.search-section-head {
+  padding: var(--sp-2) 2px 4px;
+  margin-top: var(--sp-2);
+  font-size: var(--fs-1);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  border-top: 1px solid var(--border-soft);
+}
+.search-section-head:first-of-type { border-top: 0; }
+.search-entity { cursor: pointer; }
+.search-entity:hover { background: var(--surface-hover); }
+.search-entity-scope {
+  font-size: var(--fs-1);
+  color: var(--muted);
+  background: var(--surface-2);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
 /* ---------- Центр уведомлений ---------- */
 .notif-modal-inner { width: min(94vw, 560px); max-width: 560px; height: auto; max-height: min(82dvh, 720px); }
 .notif-head-actions { display: flex; align-items: center; gap: var(--sp-2); }

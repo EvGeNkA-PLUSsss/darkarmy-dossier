@@ -1517,17 +1517,93 @@ function initSearch() {
     results.innerHTML = '<p class="hint">Поиск…</p>';
     try {
       const all = allBox.checked;
-      const url = all ? `/api/search-all?q=${encodeURIComponent(q)}` : `/api/search?projectId=${encodeURIComponent(state.projectId)}&q=${encodeURIComponent(q)}`;
-      const r = await fetch(url); const data = await r.json();
-      if (!r.ok) throw new Error(data.error || r.statusText);
-      renderSearchResults(data.results || [], q, all);
+      const fileUrl = all ? `/api/search-all?q=${encodeURIComponent(q)}`
+        : `/api/search?projectId=${encodeURIComponent(state.projectId)}&q=${encodeURIComponent(q)}`;
+      // Файлы ищем в текущем/всех проектах; проекты, сообщения, задачи и людей — всегда глобально.
+      const [fileRes, entRes] = await Promise.all([
+        fetch(fileUrl),
+        fetch(`/api/search/entities?q=${encodeURIComponent(q)}`),
+      ]);
+      const fileData = await fileRes.json().catch(() => ({}));
+      if (!fileRes.ok) throw new Error(fileData.error || fileRes.statusText);
+      const entData = entRes.ok ? await entRes.json().catch(() => ({})) : {};
+      renderSearchResults(fileData.results || [], q, all, entData);
     } catch (e) { results.innerHTML = `<p class="err">Ошибка: ${escapeHtml(e.message)}</p>`; }
   }
-  function renderSearchResults(list, q, showProject) {
-    if (!list.length) { results.innerHTML = '<p class="hint">Ничего не найдено</p>'; return; }
+
+  function entityRow(iconName, titleHtml, subHtml, onClick, extraClass = '') {
+    const el = document.createElement('div');
+    el.className = 'search-item search-entity ' + extraClass;
+    el.innerHTML = `
+      <div class="search-item-body">
+        <div class="search-item-content">
+          <div class="search-item-head">
+            <span class="icon">${icon(iconName, 'sm')}</span>
+            <span class="path">${titleHtml}</span>
+          </div>
+          ${subHtml ? `<div class="search-snippet">${subHtml}</div>` : ''}
+        </div>
+      </div>`;
+    el.onclick = onClick;
+    return el;
+  }
+
+  function addEntitySection(title, items, buildRow) {
+    if (!items.length) return;
+    const head = document.createElement('div');
+    head.className = 'search-section-head';
+    head.textContent = `${title} · ${items.length}`;
+    results.appendChild(head);
+    for (const it of items) results.appendChild(buildRow(it));
+  }
+
+  function renderSearchResults(list, q, showProject, entities) {
+    const ent = entities || {};
+    const projects = ent.projects || [];
+    const messages = ent.messages || [];
+    const tasks = ent.tasks || [];
+    const users = ent.users || [];
+    const totalEntities = projects.length + messages.length + tasks.length + users.length;
+    if (!list.length && !totalEntities) { results.innerHTML = '<p class="hint">Ничего не найдено</p>'; return; }
+
     results.innerHTML = '';
-    const summary = document.createElement('p'); summary.className = 'hint';
-    summary.textContent = `Найдено: ${list.length}`; results.appendChild(summary);
+    const summary = document.createElement('p'); summary.className = 'hint search-summary';
+    summary.textContent = `Файлы: ${list.length} · Проекты: ${projects.length} · Сообщения: ${messages.length} · Задачи: ${tasks.length} · Люди: ${users.length}`;
+    results.appendChild(summary);
+
+    addEntitySection('Проекты', projects, (p) =>
+      entityRow('layers', highlightPath(p.name, q), 'Перейти к проекту', async () => {
+        modalEl.style.display = 'none';
+        await switchProject(p.id);
+      }, 'entity-project'));
+
+    addEntitySection('Сообщения', messages, (m) =>
+      entityRow('message', `${escapeHtml(m.from || '—')} <span class="search-entity-scope">${m.chat === 'general' ? 'общий чат' : escapeHtml(m.projectName || 'чат проекта')}</span>`,
+        highlightSnippet(m.text, q), async () => {
+          modalEl.style.display = 'none';
+          if (m.chat === 'general') { openChatTab('general'); toggleChat(true); }
+          else {
+            if (m.projectId && m.projectId !== state.projectId) await switchProject(m.projectId);
+            openChatTab('project'); toggleChat(true);
+          }
+        }, 'entity-message'));
+
+    addEntitySection('Задачи', tasks, (t) =>
+      entityRow(t.done ? 'check-circle' : 'square', escapeHtml(t.text.slice(0, 120)) + (t.done ? ' <span class="search-entity-scope">выполнена</span>' : ''),
+        escapeHtml(t.projectName || ''), async () => {
+          modalEl.style.display = 'none';
+          if (t.projectId && t.projectId !== state.projectId) await switchProject(t.projectId);
+          openChatTab('project'); toggleChat(true);
+        }, 'entity-task'));
+
+    addEntitySection('Люди', users, (u) =>
+      entityRow('user', highlightPath(u.username, q), 'Участник DarkArmy', () => {}, 'entity-user'));
+
+    if (!list.length) return;
+    const filesHead = document.createElement('div');
+    filesHead.className = 'search-section-head';
+    filesHead.textContent = `Файлы · ${list.length}`;
+    results.appendChild(filesHead);
     for (const item of list) {
       const el = document.createElement('div');
       el.className = 'search-item';
@@ -1542,7 +1618,6 @@ function initSearch() {
                                         '<span class="search-badge content">содержимое</span>';
       const projBadge = showProject && item.projectName ? `<span class="search-project-badge">${icon('layers','sm')} ${escapeHtml(item.projectName)}</span>` : '';
 
-      // [NEW] Превью для картинок
       let thumbHtml = '';
       if (item.isImage) {
         const pid = item.projectId || state.projectId;

@@ -599,7 +599,7 @@ function projectGuard(level = 'read', from = 'anywhere') {
     next();
   };
 }
-const rateLimitLogin     = makeRateLimiter(15 * 60 * 1000, 10, 'Слишком много попыток входа. Подождите 15 минут.');
+const rateLimitLogin     = makeRateLimiter(15 * 60 * 1000, cfg.limits.loginMaxAttempts || 10, 'Слишком много попыток входа. Подождите 15 минут.');
 const rateLimitRegister  = makeRateLimiter(60 * 60 * 1000, 15, 'Слишком много попыток регистрации. Подождите час.');
 // [SEC] Новые лимиты на дорогие endpoints
 const rateLimitDarcus    = makeRateLimiter(60 * 1000, 20, 'Darcus: слишком много запросов, подождите');
@@ -1493,6 +1493,93 @@ async function hybridSearchProject(root, projectId, projectName, q, opts = {}) {
   arr.sort((a, b) => b.score - a.score);
   return arr.slice(0, MAX_PER_PROJECT);
 }
+
+/* ---------- Глобальный поиск по сущностям (проекты/чаты/задачи/люди) ---------- */
+function searchSnippet(text, q, pad = 70) {
+  const src = String(text || '').replace(/\s+/g, ' ').trim();
+  const idx = src.toLowerCase().indexOf(q);
+  if (idx < 0) return src.slice(0, pad * 2);
+  const start = Math.max(0, idx - pad);
+  const end = Math.min(src.length, idx + q.length + pad);
+  return (start > 0 ? '…' : '') + src.slice(start, end) + (end < src.length ? '…' : '');
+}
+
+app.get('/api/search/entities', requireAuth, rateLimitExpensive, (req, res) => {
+  const q = String(req.query.q || '').toLowerCase().trim();
+  if (q.length < 2) return res.json({ query: q, projects: [], messages: [], tasks: [], users: [] });
+  const LIMIT = 10;
+  const projects = loadProjects().projects.filter(p => canReadProject(req.user, p));
+
+  const projectHits = projects
+    .filter(p => String(p.name).toLowerCase().includes(q))
+    .slice(0, LIMIT)
+    .map(p => ({ id: p.id, name: p.name }));
+
+  const messages = [];
+  // Общий чат
+  const general = loadDoc('chat', { messages: [] }).messages || [];
+  for (let i = general.length - 1; i >= 0 && messages.length < LIMIT; i--) {
+    const m = general[i];
+    if (m && m.text && String(m.text).toLowerCase().includes(q)) {
+      messages.push({
+        chat: 'general', messageId: m.id, from: m.from,
+        projectId: null, projectName: null,
+        text: searchSnippet(m.text, q), timestamp: m.timestamp,
+      });
+    }
+  }
+  // Проектные чаты (только доступные проекты)
+  const pchats = loadDoc('project-chats', { chats: {} }).chats || {};
+  for (const p of projects) {
+    const chat = pchats[p.id];
+    if (!chat) continue;
+    const list = chat.messages || [];
+    for (let i = list.length - 1; i >= 0 && messages.length < LIMIT * 2; i--) {
+      const m = list[i];
+      if (m && m.text && String(m.text).toLowerCase().includes(q)) {
+        messages.push({
+          chat: 'project', messageId: m.id, from: m.from,
+          projectId: p.id, projectName: p.name,
+          text: searchSnippet(m.text, q), timestamp: m.timestamp,
+        });
+      }
+    }
+  }
+
+  const tasks = [];
+  for (const p of projects) {
+    const chat = pchats[p.id];
+    if (!chat) continue;
+    for (const t of (chat.tasks || [])) {
+      if (tasks.length >= LIMIT * 2) break;
+      if (t && t.text && String(t.text).toLowerCase().includes(q)) {
+        tasks.push({ taskId: t.id, projectId: p.id, projectName: p.name, text: t.text, done: !!t.done });
+      }
+    }
+  }
+
+  // Люди: админ видит всех, остальные — участников доступных проектов и себя.
+  let candidates;
+  if (req.user.role === 'admin') {
+    candidates = loadUsers().users.map(u => u.username);
+  } else {
+    const set = new Set([req.user.username]);
+    for (const p of projects) for (const m of (p.members || [])) set.add(m.username);
+    candidates = [...set];
+  }
+  const users = candidates
+    .filter(name => String(name).toLowerCase().includes(q))
+    .slice(0, LIMIT)
+    .map(username => ({ username }));
+
+  res.json({
+    query: q,
+    projects: projectHits,
+    messages: messages.slice(0, LIMIT * 2),
+    tasks: tasks.slice(0, LIMIT * 2),
+    users,
+  });
+});
 
 /* ---------- Поиск ---------- */
 app.get('/api/search', requireAuth, rateLimitExpensive, projectGuard('read'), async (req, res) => {

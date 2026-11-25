@@ -11,6 +11,7 @@ process.env.DATA_DIR = path.join(tmp, 'data');
 process.env.PROJECTS_ROOT = path.join(tmp, 'projects');
 process.env.BACKUP_DIR = path.join(tmp, 'backups');
 process.env.SESSION_SECRET = 'api-secret';
+process.env.LOGIN_MAX_ATTEMPTS = '1000';
 process.env.ADMIN_PASSWORD = 'AdminTest123!Pass';
 process.env.NODE_ENV = 'test';
 
@@ -336,4 +337,46 @@ test('стили Darcus доступны пользователю, полный 
   assert.ok(styles.body.presets && typeof styles.body.presets === 'object');
   assert.equal((await member.request('/api/darcus/config')).status, 403);
   assert.equal((await admin.request('/api/darcus/config')).status, 200);
+});
+
+test('глобальный поиск: проекты, сообщения, задачи и люди с учётом доступа', async () => {
+  // задача в проектном чате
+  const taskAdd = await admin.json('/api/projects/default/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'Уникальная задача про поиск Zeta' }),
+  });
+  assert.equal(taskAdd.res.status, 200, JSON.stringify(taskAdd.body));
+  // сообщение в проектном чате
+  await admin.json('/api/chat/project/default/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'Проектное сообщение Zeta для поиска' }),
+  });
+
+  const adminHits = await admin.json('/api/search/entities?q=Zeta');
+  assert.equal(adminHits.res.status, 200);
+  assert.ok(adminHits.body.tasks.some(t => t.text.includes('Zeta') && t.projectId === 'default'));
+  assert.ok(adminHits.body.messages.some(m => m.chat === 'project' && m.text.includes('Zeta')));
+
+  const byProject = await admin.json('/api/search/entities?q=' + encodeURIComponent('Основ'));
+  assert.ok(byProject.body.projects.some(p => p.id === 'default'));
+
+  // member1 — участник проекта: видит проектное сообщение; member2 — нет
+  const member1 = makeClient();
+  await member1.login('member1', 'MemberTest123!');
+  const m1 = await member1.json('/api/search/entities?q=Zeta');
+  assert.ok(m1.body.messages.some(m => m.chat === 'project'));
+
+  const member2 = makeClient();
+  await member2.login('member2', 'MemberTest123!');
+  const m2 = await member2.json('/api/search/entities?q=Zeta');
+  assert.ok(!m2.body.messages.some(m => m.chat === 'project' && m.projectId === 'default'));
+  const proj2 = await member2.json('/api/search/entities?q=' + encodeURIComponent('Основ'));
+  assert.equal(proj2.body.projects.length, 0, 'посторонний не должен видеть проекты');
+
+  // короткий запрос — пустой ответ без ошибки
+  const short = await admin.json('/api/search/entities?q=a');
+  assert.equal(short.res.status, 200);
+  assert.deepEqual(short.body.messages, []);
 });
