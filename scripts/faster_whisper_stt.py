@@ -11,12 +11,17 @@ def main():
     try:
         from faster_whisper import WhisperModel
     except Exception as e:
-        print(json.dumps({'error': 'faster-whisper не установлен: ' + str(e)}, ensure_ascii=False))
+        msg = json.dumps({'error': 'faster-whisper не установлен: ' + str(e)}, ensure_ascii=False)
+        sys.stdout.buffer.write((msg + '\n').encode('utf-8'))
         return 2
     model = WhisperModel(model_name, device='cpu', compute_type='int8')
     segments, info = model.transcribe(audio, language=lang, vad_filter=True, beam_size=1)
     text = ' '.join((s.text or '').strip() for s in segments).strip()
-    print(json.dumps({'text': text, 'language': getattr(info, 'language', lang)}, ensure_ascii=False))
+    payload = json.dumps({'text': text, 'language': getattr(info, 'language', lang)}, ensure_ascii=False)
+    # Windows-консоль по умолчанию cp1251 — принудительно отдаём UTF-8,
+    # иначе Node/UI получают кракозябры или знаки вопроса.
+    sys.stdout.buffer.write((payload + '\n').encode('utf-8'))
+    sys.stdout.flush()
     return 0
 
 

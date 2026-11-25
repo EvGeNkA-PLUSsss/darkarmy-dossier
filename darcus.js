@@ -1195,7 +1195,10 @@ function transcribeWithPython(buffer, w, language) {
   const model = w.model || w.modelPath || 'base';
   const lang = language || w.language || 'ru';
   return new Promise((resolve, reject) => {
-    const p = child.spawn(python, [script, String(model), tmp, lang], { windowsHide: true });
+    const p = child.spawn(python, [script, String(model), tmp, lang], {
+      windowsHide: true,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+    });
     let stdout = '', stderr = '';
     const timer = setTimeout(() => { try { p.kill(); } catch {} reject(new Error('faster-whisper timeout')); }, 180000);
     p.stdout.on('data', d => stdout += d.toString('utf8'));
