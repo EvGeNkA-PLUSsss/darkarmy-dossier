@@ -2250,6 +2250,12 @@ function renderProjectKanban() {
       <div class="kanban-cards"></div>`;
     const cards = colEl.querySelector('.kanban-cards');
     for (const t of colTasks) cards.appendChild(buildKanbanCard(t));
+    if (!colTasks.length) {
+      const empty = document.createElement('div');
+      empty.className = 'kanban-empty';
+      empty.textContent = 'Перетащите задачу сюда или нажмите +';
+      cards.appendChild(empty);
+    }
     colEl.addEventListener('dragover', e => { e.preventDefault(); colEl.classList.add('drag-over'); });
     colEl.addEventListener('dragleave', e => { if (!colEl.contains(e.relatedTarget)) colEl.classList.remove('drag-over'); });
     colEl.addEventListener('drop', async e => {

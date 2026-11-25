@@ -873,6 +873,44 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
   align-self: flex-end;
   flex: 0 0 auto;
 }
+/* Микрофон и скрепка — нейтральные, акцентная только отправка. */
+.chat-form .mic-btn,
+.chat-form .attach-btn {
+  background: transparent;
+  color: var(--text-dim);
+}
+.chat-form .mic-btn:hover,
+.chat-form .attach-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.chat-form .mic-btn.recording {
+  background: rgba(239, 68, 68, .2);
+  color: var(--danger-fg);
+}
+
+/* Модалка проекта: не растягивать на весь экран при малом содержимом. */
+.project-modal-inner {
+  width: min(92vw, 820px);
+  max-width: 820px;
+  height: auto;
+  max-height: min(84dvh, 780px);
+}
+.project-modal-inner .proj-body { max-height: calc(84dvh - 132px); }
+
+/* Канбан: подсказка в пустой колонке. */
+.kanban-empty {
+  padding: 14px 8px;
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--fs-1);
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+
+@media (max-width: 900px) {
+  .chat-panel.open { width: 100%; }
+}
 #content > img,
 #content .ocr-wrap img {
   display: block;
