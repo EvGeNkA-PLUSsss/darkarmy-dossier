@@ -92,19 +92,13 @@ npm run check
 
 ## Production
 
-1. Заполнить `.env`: `NODE_ENV=production`, `SESSION_SECRET`, `PROJECTS_ROOT`.
-2. Поставить reverse proxy с HTTPS (Caddy/nginx) и проксировать на `127.0.0.1:7561`.
-3. Задать `TRUST_PROXY=1` (или адрес прокси), включить автозапуск (NSSM/PM2/systemd).
-4. Настроить ежедневный бэкап `data/` и `PROJECTS_ROOT`.
+Пошаговая инструкция: [deploy/README.md](deploy/README.md).
 
-Пример Caddy:
-
-```
-dossier.example.com {
-    reverse_proxy 127.0.0.1:7561
-}
-```
-
+Кратко:
+1. `.env`: `NODE_ENV=production`, `SESSION_SECRET`, `PROJECTS_ROOT`, `BIND_HOST=127.0.0.1`, `TRUST_PROXY=1`.
+2. HTTPS reverse proxy — готовые конфиги `deploy/Caddyfile` (автосертификаты) или `deploy/nginx.conf`.
+3. Автозапуск — `deploy/install-task.ps1` (Windows), `deploy/darkarmy-dossier.service` (systemd) или `deploy/ecosystem.config.js` (PM2).
+4. Ежедневный бэкап — `npm run backup` или `deploy/install-backup-task.ps1`.
 ## Безопасность
 
 - Файлы проектов отдаются по allow-list: изображения/PDF — инлайн, HTML/JS/SVGZ/XML и

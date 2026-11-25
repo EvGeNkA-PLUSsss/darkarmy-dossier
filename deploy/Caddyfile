@@ -1,0 +1,36 @@
+# Caddy — автоматический HTTPS (Let's Encrypt) и reverse proxy для DarkArmy Dossier.
+# 1. Установите Caddy: https://caddyserver.com/docs/install
+# 2. Замените домен и пути, скопируйте файл в /etc/caddy/Caddyfile
+# 3. sudo systemctl reload caddy
+#
+# Сервер при этом должен слушать только localhost:
+#   BIND_HOST=127.0.0.1
+#   TRUST_PROXY=1
+#   NODE_ENV=production
+
+dossier.example.com {
+	encode gzip zstd
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+
+	# SSE и большие загрузки: отключаем буферизацию и увеличиваем таймауты.
+	reverse_proxy 127.0.0.1:7561 {
+		flush_interval -1
+		transport http {
+			read_timeout 1h
+			write_timeout 1h
+		}
+		header_up X-Real-IP {remote_host}
+	}
+
+	log {
+		output file /var/log/caddy/darkarmy-dossier.log {
+			roll_size 50MB
+			roll_keep 10
+		}
+	}
+}

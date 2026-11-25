@@ -33,6 +33,10 @@ fs.writeFileSync(path.join(dataDir, 'telemetry', 'admin.json'), JSON.stringify({
   username: 'admin', firstSeen: now, lastSeen: now,
   events: [{ ts: now, type: 'login' }, { ts: now, type: 'request' }, { ts: now, type: 'request' }],
 }), 'utf8');
+// JSON-документы, которые должны переехать в таблицу documents
+fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ uploadLimitMB: 42, generalChatMode: 'everyone' }), 'utf8');
+fs.writeFileSync(path.join(dataDir, 'invites.json'), JSON.stringify({ codes: [{ code: 'TESTCODE', usedBy: null }] }), 'utf8');
+fs.writeFileSync(path.join(dataDir, 'chat.json'), JSON.stringify({ messages: [{ id: 'm1', from: 'admin', to: 'general', text: 'hello' }] }), 'utf8');
 
 test.after(() => {
   storage.close();
@@ -54,6 +58,18 @@ test('миграция JSON → SQLite переносит пользовател
   // JSON остаются архивом + есть резервная копия перед миграцией
   assert.ok(fs.existsSync(path.join(dataDir, 'users.json')));
   const backups = fs.readdirSync(dataDir).filter(f => f.startsWith('backup-pre-sqlite-'));
+  assert.equal(backups.length, 1);
+});
+
+test('документы JSON → SQLite: настройки, инвайты, чат; запись поверх', () => {
+  assert.equal(storage.getDoc('settings', {}).uploadLimitMB, 42);
+  assert.equal(storage.getDoc('invites', {}).codes[0].code, 'TESTCODE');
+  assert.equal(storage.getDoc('chat', {}).messages[0].text, 'hello');
+  storage.setDoc('settings', { uploadLimitMB: 7 });
+  assert.equal(storage.getDoc('settings', {}).uploadLimitMB, 7);
+  // отсутствующий документ возвращает дефолт и не падает
+  assert.deepEqual(storage.getDoc('trash', { items: [] }), { items: [] });
+  const backups = fs.readdirSync(dataDir).filter(f => f.startsWith('backup-pre-docs-'));
   assert.equal(backups.length, 1);
 });
 

@@ -25,7 +25,8 @@ const cfg = require('./config');
 const { logger, writeAccessLog, LOG_FILE } = require('./logger');
 const storage = require('./src/storage');
 
-const app = express('+role+');
+const app = express();
+app.disable('x-powered-by');
 const PORT = cfg.port;
 
 const PROJECTS_ROOT = cfg.projectsRoot;      // [SEC] вынесено в config.js
@@ -33,26 +34,11 @@ const DATA_DIR      = cfg.dataDir;           // [SEC] вынесено в config
 
 const USERS_FILE         = path.join(DATA_DIR, 'users.json');
 const CHANGES_FILE       = path.join(DATA_DIR, 'changes.json');
-const SETTINGS_FILE      = path.join(DATA_DIR, 'settings.json');
 const TMP_DIR            = path.join(DATA_DIR, 'tmp');
-const CHAT_FILE          = path.join(DATA_DIR, 'chat.json');
-const REQUESTS_FILE      = path.join(DATA_DIR, 'requests.json');
-const REPORTS_FILE       = path.join(DATA_DIR, 'reports.json');
-const TICKETS_FILE       = path.join(DATA_DIR, 'tickets.json');
 const PROJECTS_FILE      = path.join(DATA_DIR, 'projects.json');
-const PUNISHMENTS_FILE   = path.join(DATA_DIR, 'punishments.json');
-const PROJECT_CHATS_FILE = path.join(DATA_DIR, 'project-chats.json');
-const ATTACHMENTS_FILE   = path.join(DATA_DIR, 'attachments.json');
-const INVITES_FILE       = path.join(DATA_DIR, 'invites.json');
 const ATTACH_DIR         = path.join(DATA_DIR, 'attachments');
-const ADS_FILE           = path.join(DATA_DIR, 'ads.json');
 const ADS_DIR            = path.join(DATA_DIR, 'ads');
-const SUBSCRIPTIONS_FILE = path.join(DATA_DIR, 'subscriptions.json');
-const DARCUS_CHATS_FILE  = path.join(DATA_DIR, 'darcus-chats.json');
-const SHARES_FILE        = path.join(DATA_DIR, 'shares.json');
-const TRASH_FILE         = path.join(DATA_DIR, 'trash.json');
 const TRASH_RETENTION_DAYS = cfg.limits.trashRetentionDays;
-const PROJECT_META_FILE  = path.join(DATA_DIR, 'project-meta.json');   // [NEW]
 
 for (const d of [ADS_DIR]) if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 for (const d of [DATA_DIR, PROJECTS_ROOT, TMP_DIR, ATTACH_DIR]) {
@@ -61,6 +47,9 @@ for (const d of [DATA_DIR, PROJECTS_ROOT, TMP_DIR, ATTACH_DIR]) {
 // Метаданные (пользователи, проекты, журнал, телеметрия, сессии) — в SQLite.
 // При первом запуске сюда переносятся JSON-файлы (они остаются как архив).
 storage.init({ dir: DATA_DIR });
+// JSON-документы (настройки, чаты, тикеты, реклама и т.д.) — в SQLite.
+const loadDoc = (name, def) => storage.getDoc(name, def);
+const saveDoc = (name, data) => storage.setDoc(name, data);
 try { for (const f of fs.readdirSync(TMP_DIR)) fs.unlinkSync(path.join(TMP_DIR, f)); } catch {}
 
 const TEXT_EXT = util.TEXT_EXT;
@@ -176,27 +165,27 @@ function logChange(entry) {
 
 /* ---------- Настройки ---------- */
 function loadSettings() {
-  if (!fs.existsSync(SETTINGS_FILE)) {
+  const stored = loadDoc('settings', null);
+  if (!stored) {
     const def = { uploadLimitMB: cfg.limits.uploadDefaultMB, generalChatMode: 'everyone' };
-    try { atomicWriteFile(SETTINGS_FILE, JSON.stringify(def, null, 2)); } catch {}
+    try { saveDoc('settings', def); } catch {}
     return def;
   }
   try {
-    const s = loadJSON(SETTINGS_FILE, {});
+    const s = { ...stored };
     if (!s.generalChatMode) s.generalChatMode = 'everyone';
     if (s.uploadLimitMB === undefined) s.uploadLimitMB = cfg.limits.uploadDefaultMB;
     return s;
   } catch (e) {
-    // Не затираем повреждённый файл дефолтом: работаем на дефолтах и громко логируем.
     logger.error({ err: e.message }, 'settings: используются значения по умолчанию');
     return { uploadLimitMB: cfg.limits.uploadDefaultMB, generalChatMode: 'everyone' };
   }
 }
-const saveSettings = d => atomicWriteFile(SETTINGS_FILE, JSON.stringify(d, null, 2));
+const saveSettings = d => saveDoc('settings', d);
 
 /* ---------- Приглашения ---------- */
-const loadInvites = () => loadJSON(INVITES_FILE, { codes: [] });
-const saveInvites = d => saveJSON(INVITES_FILE, d);
+const loadInvites = () => loadDoc('invites', { codes: [] });
+const saveInvites = d => saveDoc('invites', d);
 
 const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function generateInviteCode(len = 10) {
@@ -206,8 +195,8 @@ function generateInviteCode(len = 10) {
 }
 
 /* ---------- Share-ссылки ---------- */
-const loadShares = () => loadJSON(SHARES_FILE, { items: [] });
-const saveShares = d => saveJSON(SHARES_FILE, d);
+const loadShares = () => loadDoc('shares', { items: [] });
+const saveShares = d => saveDoc('shares', d);
 const isShareExpired = e => !!(e.expiresAt && new Date(e.expiresAt).getTime() <= Date.now());
 function pruneExpiredShares() {
   const data = loadShares();
@@ -218,11 +207,11 @@ function pruneExpiredShares() {
 }
 
 /* ---------- Soft-delete ---------- */
-const loadTrash = () => loadJSON(TRASH_FILE, { items: [] });
-const saveTrash = d => saveJSON(TRASH_FILE, d);
+const loadTrash = () => loadDoc('trash', { items: [] });
+const saveTrash = d => saveDoc('trash', d);
 /* ---------- Мета проекта: теги / избранное [NEW] ---------- */
-const loadProjectMeta = () => loadJSON(PROJECT_META_FILE, { projects: {} });
-const saveProjectMeta = d => saveJSON(PROJECT_META_FILE, d);
+const loadProjectMeta = () => loadDoc('project-meta', { projects: {} });
+const saveProjectMeta = d => saveDoc('project-meta', d);
 
 function trashDirFor(project) {
   const dir = path.join(projectFolder(project), '.trash');
@@ -291,8 +280,8 @@ const canManageProject = (u, p) => {
 };
 
 /* ---------- Наказания ---------- */
-const loadPunishments = () => loadJSON(PUNISHMENTS_FILE, { items: [] });
-const savePunishments = d => saveJSON(PUNISHMENTS_FILE, d);
+const loadPunishments = () => loadDoc('punishments', { items: [] });
+const savePunishments = d => saveDoc('punishments', d);
 
 function getActivePunishment(username, type) {
   const now = Date.now();
@@ -304,10 +293,10 @@ const isBanned = u => !!getActivePunishment(u, 'ban');
 const isMuted  = u => !!getActivePunishment(u, 'mute');
 
 /* ---------- Чаты / вложения ---------- */
-const loadProjectChats = () => loadJSON(PROJECT_CHATS_FILE, { chats: {} });
-const saveProjectChats = d => saveJSON(PROJECT_CHATS_FILE, d);
-const loadAttachments  = () => loadJSON(ATTACHMENTS_FILE, { items: {} });
-const saveAttachments  = d => saveJSON(ATTACHMENTS_FILE, d);
+const loadProjectChats = () => loadDoc('project-chats', { chats: {} });
+const saveProjectChats = d => saveDoc('project-chats', d);
+const loadAttachments  = () => loadDoc('attachments', { items: {} });
+const saveAttachments  = d => saveDoc('attachments', d);
 
 function getProjectChat(projectId) {
   const data = loadProjectChats();
@@ -339,8 +328,8 @@ function telemetryAppend(username, event) {
   }
 }
 process.on('exit', () => { try { flushTelemetry(); } catch {} });
-process.on('SIGINT', () => { try { flushTelemetry(); } catch {} process.exit(0); });
-process.on('SIGTERM', () => { try { flushTelemetry(); } catch {} process.exit(0); });
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 /* ---------- SSE ---------- */
 const sseClients = new Map();
@@ -533,6 +522,8 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  // Приватный сервис: не индексировать поисковиками.
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   if (cfg.isProd) {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   }
@@ -1884,7 +1875,7 @@ app.get('/api/events', requireAuth, (req, res) => {
 /* ---------- Общий чат ---------- */
 app.delete('/api/chat/message/:id', requireAuth, (req, res) => {
   const me = req.user.username;
-  const data = loadJSON(CHAT_FILE, { messages: [] });
+  const data = loadDoc('chat', { messages: [] });
   const idx = data.messages.findIndex(m => m.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'not found' });
 
@@ -1894,7 +1885,7 @@ app.delete('/api/chat/message/:id', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'forbidden' });
 
   data.messages.splice(idx, 1);
-  saveJSON(CHAT_FILE, data);
+  saveDoc('chat', data);
 
   telemetryAppend(me, { type: 'chat-message-delete', id: msg.id, from: msg.from });
   sseBroadcast('chat-delete', { messageId: msg.id });
@@ -1902,7 +1893,7 @@ app.delete('/api/chat/message/:id', requireAuth, (req, res) => {
 });
 
 app.get('/api/chat/general', requireAuth, (req, res) => {
-  const msgs = loadJSON(CHAT_FILE, { messages: [] }).messages.filter(m => m.to === 'general');
+  const msgs = loadDoc('chat', { messages: [] }).messages.filter(m => m.to === 'general');
   res.json({ messages: msgs.slice(-300) });
 });
 
@@ -1918,10 +1909,10 @@ app.post('/api/chat/send', requireAuth, requireNotMutedGeneral, requireGeneralCh
     text: text.trim(), attachments: atts,
     timestamp: new Date().toISOString(),
   };
-  const data = loadJSON(CHAT_FILE, { messages: [] });
+  const data = loadDoc('chat', { messages: [] });
   data.messages.push(msg);
   if (data.messages.length > 1000) data.messages = data.messages.slice(-1000);
-  saveJSON(CHAT_FILE, data);
+  saveDoc('chat', data);
   sseBroadcast('chat', { message: msg });
   notifyMentions(msg.text, loadUsers().users.map(u => u.username), me, 'chat:general');
   res.json({ ok: true, message: msg });
@@ -1930,7 +1921,7 @@ app.post('/api/chat/send', requireAuth, requireNotMutedGeneral, requireGeneralCh
 /* ---------- Тикеты ---------- */
 app.get('/api/tickets', requireAuth, (req, res) => {
   const me = req.user;
-  const all = loadJSON(TICKETS_FILE, { tickets: [] }).tickets;
+  const all = loadDoc('tickets', { tickets: [] }).tickets;
   const list = me.role === 'admin' ? all : all.filter(t => t.from === me.username);
   const sorted = list.slice().sort((a, b) => {
     const order = { open: 0, in_progress: 1, closed: 2 };
@@ -1946,7 +1937,7 @@ app.post('/api/tickets', requireAuth, (req, res) => {
   if (!text || typeof text !== 'string' || !text.trim())
     return res.status(400).json({ error: 'Опишите проблему' });
   text = text.trim().slice(0, 4000);
-  const data = loadJSON(TICKETS_FILE, { tickets: [] });
+  const data = loadDoc('tickets', { tickets: [] });
   const existing = data.tickets.find(t => t.from === me && t.status !== 'closed');
   if (existing)
     return res.status(409).json({ error: 'У вас уже есть открытое обращение', ticketId: existing.id });
@@ -1956,7 +1947,7 @@ app.post('/api/tickets', requireAuth, (req, res) => {
     status: 'open', createdAt: new Date().toISOString(),
   };
   data.tickets.push(ticket);
-  saveJSON(TICKETS_FILE, data);
+  saveDoc('tickets', data);
   const admins = loadUsers().users.filter(u => u.role === 'admin').map(u => u.username);
   sseSendTo(admins, 'ticket-new', { ticket });
   notifyMany(admins.filter(a => a !== me), {
@@ -1968,7 +1959,7 @@ app.post('/api/tickets', requireAuth, (req, res) => {
 
 app.get('/api/tickets/:id', requireAuth, (req, res) => {
   const me = req.user;
-  const data = loadJSON(TICKETS_FILE, { tickets: [] });
+  const data = loadDoc('tickets', { tickets: [] });
   const t = data.tickets.find(x => x.id === req.params.id);
   if (!t) return res.status(404).json({ error: 'not found' });
   if (me.role !== 'admin' && t.from !== me.username)
@@ -1978,7 +1969,7 @@ app.get('/api/tickets/:id', requireAuth, (req, res) => {
 
 app.post('/api/tickets/:id/messages', requireAuth, (req, res) => {
   const me = req.user;
-  const data = loadJSON(TICKETS_FILE, { tickets: [] });
+  const data = loadDoc('tickets', { tickets: [] });
   const t = data.tickets.find(x => x.id === req.params.id);
   if (!t) return res.status(404).json({ error: 'not found' });
   if (me.role !== 'admin' && t.from !== me.username)
@@ -1996,7 +1987,7 @@ app.post('/api/tickets/:id/messages', requireAuth, (req, res) => {
     timestamp: new Date().toISOString(),
   };
   t.messages.push(msg);
-  saveJSON(TICKETS_FILE, data);
+  saveDoc('tickets', data);
   const recipients = new Set([t.from]);
   const admins = loadUsers().users.filter(u => u.role === 'admin').map(u => u.username);
   for (const a of admins) recipients.add(a);
@@ -2016,7 +2007,7 @@ app.post('/api/tickets/:id/messages', requireAuth, (req, res) => {
 });
 
 app.post('/api/tickets/:id/accept', requireRole('admin'), (req, res) => {
-  const data = loadJSON(TICKETS_FILE, { tickets: [] });
+  const data = loadDoc('tickets', { tickets: [] });
   const t = data.tickets.find(x => x.id === req.params.id);
   if (!t) return res.status(404).json({ error: 'not found' });
   if (t.status === 'closed') return res.status(400).json({ error: 'Тикет закрыт' });
@@ -2030,7 +2021,7 @@ app.post('/api/tickets/:id/accept', requireRole('admin'), (req, res) => {
     timestamp: new Date().toISOString(),
   };
   t.messages.push(sysMsg);
-  saveJSON(TICKETS_FILE, data);
+  saveDoc('tickets', data);
   const recipients = new Set([t.from]);
   const admins = loadUsers().users.filter(u => u.role === 'admin').map(u => u.username);
   for (const a of admins) recipients.add(a);
@@ -2045,7 +2036,7 @@ app.post('/api/tickets/:id/accept', requireRole('admin'), (req, res) => {
 });
 
 app.post('/api/tickets/:id/close', requireRole('admin'), (req, res) => {
-  const data = loadJSON(TICKETS_FILE, { tickets: [] });
+  const data = loadDoc('tickets', { tickets: [] });
   const t = data.tickets.find(x => x.id === req.params.id);
   if (!t) return res.status(404).json({ error: 'not found' });
   if (t.status === 'closed') return res.status(400).json({ error: 'Уже закрыт' });
@@ -2058,7 +2049,7 @@ app.post('/api/tickets/:id/close', requireRole('admin'), (req, res) => {
     timestamp: new Date().toISOString(),
   };
   t.messages.push(sysMsg);
-  saveJSON(TICKETS_FILE, data);
+  saveDoc('tickets', data);
   const recipients = new Set([t.from]);
   const admins = loadUsers().users.filter(u => u.role === 'admin').map(u => u.username);
   for (const a of admins) recipients.add(a);
@@ -2074,7 +2065,7 @@ app.post('/api/tickets/:id/close', requireRole('admin'), (req, res) => {
 
 /* ---------- Запросы ---------- */
 app.get('/api/requests', requireRole('admin'), (req, res) => {
-  res.json({ items: loadJSON(REQUESTS_FILE, { items: [] }).items.slice().reverse() });
+  res.json({ items: loadDoc('requests', { items: [] }).items.slice().reverse() });
 });
 
 app.post('/api/requests', requireAuth, projectGuard('read', 'body'), (req, res) => {
@@ -2092,9 +2083,9 @@ app.post('/api/requests', requireAuth, projectGuard('read', 'body'), (req, res) 
     id: crypto.randomUUID(), from: me, file, projectId: req.project.id,
     text, timestamp: new Date().toISOString(), status: 'open',
   };
-  const data = loadJSON(REQUESTS_FILE, { items: [] });
+  const data = loadDoc('requests', { items: [] });
   data.items.push(item);
-  saveJSON(REQUESTS_FILE, data);
+  saveDoc('requests', data);
   const admins = loadUsers().users.filter(u => u.role === 'admin').map(u => u.username);
   sseSendTo(admins, 'request', { item });
   const targets = new Set(admins);
@@ -2109,13 +2100,13 @@ app.post('/api/requests', requireAuth, projectGuard('read', 'body'), (req, res) 
 });
 
 app.post('/api/requests/:id/close', requireRole('admin'), (req, res) => {
-  const data = loadJSON(REQUESTS_FILE, { items: [] });
+  const data = loadDoc('requests', { items: [] });
   const item = data.items.find(i => i.id === req.params.id);
   if (!item) return res.status(404).json({ error: 'not found' });
   item.status = 'closed';
   item.closedBy = req.user.username;
   item.closedAt = new Date().toISOString();
-  saveJSON(REQUESTS_FILE, data);
+  saveDoc('requests', data);
   notifyUser(item.from, {
     type: 'request', title: 'Запрос обработан',
     body: `Ваш запрос по файлу ${item.file} закрыт`,
@@ -2141,9 +2132,9 @@ app.post('/api/reports', requireAuth, projectGuard('read', 'body'), (req, res) =
     projectId: req.project.id,
     timestamp: new Date().toISOString(), status: 'open',
   };
-  const data = loadJSON(REPORTS_FILE, { items: [] });
+  const data = loadDoc('reports', { items: [] });
   data.items.push(item);
-  saveJSON(REPORTS_FILE, data);
+  saveDoc('reports', data);
   const admins = loadUsers().users.filter(u => u.role === 'admin').map(u => u.username);
   sseSendTo(admins, 'report', { item });
   notifyMany(admins.filter(a => a !== me), {
@@ -2155,17 +2146,17 @@ app.post('/api/reports', requireAuth, projectGuard('read', 'body'), (req, res) =
 });
 
 app.get('/api/reports', requireRole('admin'), (req, res) => {
-  res.json({ items: loadJSON(REPORTS_FILE, { items: [] }).items.slice().reverse() });
+  res.json({ items: loadDoc('reports', { items: [] }).items.slice().reverse() });
 });
 
 app.post('/api/reports/:id/resolve', requireRole('admin'), (req, res) => {
-  const data = loadJSON(REPORTS_FILE, { items: [] });
+  const data = loadDoc('reports', { items: [] });
   const item = data.items.find(i => i.id === req.params.id);
   if (!item) return res.status(404).json({ error: 'not found' });
   item.status = 'resolved';
   item.resolvedBy = req.user.username;
   item.resolvedAt = new Date().toISOString();
-  saveJSON(REPORTS_FILE, data);
+  saveDoc('reports', data);
   notifyUser(item.from, {
     type: 'report', title: 'Жалоба рассмотрена',
     body: `Жалоба на файл ${item.file} рассмотрена администратором`,
@@ -2493,7 +2484,7 @@ app.get('/api/chat/attach/:id', requireAuth, (req, res) => {
       const project = loadProjects().projects.find(p => p.id === att.scope.slice('project:'.length));
       allowed = canReadProject(req.user, project);
     } else if (att.scope.startsWith('ticket:')) {
-      const ticket = loadJSON(TICKETS_FILE, { tickets: [] }).tickets
+      const ticket = loadDoc('tickets', { tickets: [] }).tickets
         .find(t => t.id === att.scope.slice('ticket:'.length));
       allowed = !!ticket && (ticket.from === req.user.username || ticket.acceptedBy === req.user.username);
     }
@@ -2574,18 +2565,18 @@ const DEFAULT_ADS = {
   images: [],
 };
 function loadAds() {
-  if (!fs.existsSync(ADS_FILE)) {
-    atomicWriteFile(ADS_FILE, JSON.stringify(DEFAULT_ADS, null, 2));
-    return JSON.parse(JSON.stringify(DEFAULT_ADS));
+  const stored = loadDoc('ads', null);
+  if (!stored) {
+    const def = JSON.parse(JSON.stringify(DEFAULT_ADS));
+    try { saveDoc('ads', def); } catch {}
+    return def;
   }
-  try {
-    const a = JSON.parse(fs.readFileSync(ADS_FILE, 'utf8'));
-    a.slots  = { ...DEFAULT_ADS.slots, ...(a.slots || {}) };
-    a.images = Array.isArray(a.images) ? a.images : [];
-    return a;
-  } catch { return JSON.parse(JSON.stringify(DEFAULT_ADS)); }
+  const a = { ...stored };
+  a.slots  = { ...DEFAULT_ADS.slots, ...(a.slots || {}) };
+  a.images = Array.isArray(a.images) ? a.images : [];
+  return a;
 }
-function saveAds(a) { atomicWriteFile(ADS_FILE, JSON.stringify(a, null, 2)); }
+function saveAds(a) { saveDoc('ads', a); }
 
 function adsDistribute() {
   const a = loadAds();
@@ -2674,18 +2665,18 @@ app.get('/api/ads/admin/list', requireSelfAdmin, (req, res) => {
 /* ---------- Подписки ---------- */
 const DEFAULT_SUBS = { active: [], codes: [] };
 function loadSubs() {
-  if (!fs.existsSync(SUBSCRIPTIONS_FILE)) {
-    atomicWriteFile(SUBSCRIPTIONS_FILE, JSON.stringify(DEFAULT_SUBS, null, 2));
-    return JSON.parse(JSON.stringify(DEFAULT_SUBS));
+  const stored = loadDoc('subscriptions', null);
+  if (!stored) {
+    const def = JSON.parse(JSON.stringify(DEFAULT_SUBS));
+    try { saveDoc('subscriptions', def); } catch {}
+    return def;
   }
-  try {
-    const s = JSON.parse(fs.readFileSync(SUBSCRIPTIONS_FILE, 'utf8'));
-    s.active = Array.isArray(s.active) ? s.active : [];
-    s.codes  = Array.isArray(s.codes)  ? s.codes  : [];
-    return s;
-  } catch { return JSON.parse(JSON.stringify(DEFAULT_SUBS)); }
+  const s = { ...stored };
+  s.active = Array.isArray(s.active) ? s.active : [];
+  s.codes  = Array.isArray(s.codes)  ? s.codes  : [];
+  return s;
 }
-function saveSubs(s) { atomicWriteFile(SUBSCRIPTIONS_FILE, JSON.stringify(s, null, 2)); }
+function saveSubs(s) { saveDoc('subscriptions', s); }
 
 function isSubscribed(username) {
   if (!username) return false;
@@ -3293,11 +3284,10 @@ function migrateOcrCacheIfNeeded() {
 
 /* ---------- Darcus: чаты ---------- */
 function loadDarcusChats() {
-  try { return JSON.parse(fs.readFileSync(DARCUS_CHATS_FILE, 'utf8')); }
-  catch { return { chats: {} }; }
+  return loadDoc('darcus-chats', { chats: {} });
 }
 function saveDarcusChats(d) {
-  try { atomicWriteFile(DARCUS_CHATS_FILE, JSON.stringify(d, null, 2)); } catch {}
+  try { saveDoc('darcus-chats', d); } catch {}
 }
 function getUserChats(username) {
   const d = loadDarcusChats();
@@ -3461,9 +3451,30 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-/* ---------- Старт ---------- */
+/* ---------- Старт и корректная остановка ---------- */
+let httpServer = null;
+let shuttingDown = false;
+
+function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try { logger.info({ signal }, 'shutting down'); } catch {}
+  try { flushTelemetry(); } catch {}
+  const finish = () => {
+    try { storage.close(); } catch {}
+    process.exit(0);
+  };
+  if (httpServer && typeof httpServer.close === 'function') {
+    httpServer.close(finish);
+    const t = setTimeout(finish, 8000);
+    if (t.unref) t.unref();
+  } else {
+    finish();
+  }
+}
+
 function startServer() {
-  return app.listen(PORT, cfg.bindHost, () => {
+  httpServer = app.listen(PORT, cfg.bindHost, () => {
     loadUsers();
     loadProjects();
     migrateOcrCacheIfNeeded();
@@ -3487,6 +3498,7 @@ function startServer() {
     console.log(`Проекты: ${PROJECTS_ROOT}`);
     console.log(`Лог: ${LOG_FILE}`);
   });
+  return httpServer;
 }
 
 if (require.main === module) startServer();

@@ -12,7 +12,7 @@ const { DatabaseSync } = require('node:sqlite');
 let db = null;
 let dataDir = null;
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -54,12 +54,16 @@ function init({ dir }) {
       id TEXT PRIMARY KEY, username TEXT NOT NULL, type TEXT NOT NULL,
       created_at TEXT NOT NULL, read_at TEXT, payload TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS documents (
+      name TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(username, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(username, read_at);
   `);
-  db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)').run('schema_version', String(SCHEMA_VERSION));
+  db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run('schema_version', String(SCHEMA_VERSION));
   db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)').run('notifications_ready', '1');
   migrateFromJson();
+  migrateDocsFromJson();
   return db;
 }
 
@@ -154,6 +158,80 @@ function migrateFromJson() {
   console.log(`[storage] JSON → SQLite: пользователей ${users.length}, проектов ${projects.length}, ` +
     `записей журнала ${changes.length}, событий телеметрии ${telemetryEvents}. ` +
     `Резервная копия: ${backupDir}`);
+}
+
+/* ---------- Документы (JSON-хранилища, перенесённые в SQLite) ---------- */
+// name -> файл в data/ (для миграции; сами файлы остаются архивом)
+const DOC_FILES = {
+  settings: 'settings.json',
+  invites: 'invites.json',
+  punishments: 'punishments.json',
+  requests: 'requests.json',
+  reports: 'reports.json',
+  tickets: 'tickets.json',
+  chat: 'chat.json',
+  'project-chats': 'project-chats.json',
+  attachments: 'attachments.json',
+  ads: 'ads.json',
+  subscriptions: 'subscriptions.json',
+  shares: 'shares.json',
+  trash: 'trash.json',
+  'project-meta': 'project-meta.json',
+  'darcus-chats': 'darcus-chats.json',
+};
+
+function docExists(name) {
+  return !!db.prepare('SELECT 1 FROM documents WHERE name = ?').get(name);
+}
+
+function migrateDocsFromJson() {
+  if (metaGet('docs_migrated') === '1') return;
+  const existing = Object.entries(DOC_FILES)
+    .filter(([, file]) => fs.existsSync(path.join(dataDir, file)));
+  if (existing.length) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupDir = path.join(dataDir, 'backup-pre-docs-' + stamp);
+    fs.mkdirSync(backupDir, { recursive: true });
+    for (const [, file] of existing) {
+      try { fs.copyFileSync(path.join(dataDir, file), path.join(backupDir, file)); } catch {}
+    }
+  }
+  let migrated = 0;
+  tx(() => {
+    const stmt = db.prepare('INSERT OR IGNORE INTO documents (name, payload, updated_at) VALUES (?, ?, ?)');
+    for (const [name, file] of Object.entries(DOC_FILES)) {
+      if (docExists(name)) continue;
+      const full = path.join(dataDir, file);
+      if (!fs.existsSync(full)) continue;
+      try {
+        const data = readJsonSafe(full, undefined);
+        if (data === undefined) continue;
+        stmt.run(name, JSON.stringify(data), nowIso());
+        migrated++;
+      } catch (e) { console.warn("[storage] doc migrate failed: " + file + ": " + e.message); }
+    }
+  });
+  metaSet('docs_migrated', '1');
+  metaSet('docs_migrated_at', nowIso());
+  if (migrated) console.log('[storage] JSON-документы → SQLite: ' + migrated + ' шт., резервная копия в data/backup-pre-docs-*');
+}
+
+function getDoc(name, fallback) {
+  const row = db.prepare('SELECT payload FROM documents WHERE name = ?').get(name);
+  if (!row) return fallback;
+  try { return JSON.parse(row.payload); } catch { return fallback; }
+}
+
+function setDoc(name, data) {
+  const json = JSON.stringify(data);
+  db.prepare('INSERT INTO documents (name, payload, updated_at) VALUES (?, ?, ?) ' +
+    'ON CONFLICT(name) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at')
+    .run(name, json, nowIso());
+  return data;
+}
+
+function deleteDoc(name) {
+  db.prepare('DELETE FROM documents WHERE name = ?').run(name);
 }
 
 /* ---------- Пользователи ---------- */
@@ -413,6 +491,7 @@ function stats() {
     changes: db.prepare('SELECT COUNT(*) AS n FROM changes').get().n,
     telemetry: db.prepare('SELECT COUNT(*) AS n FROM telemetry').get().n,
     notifications: db.prepare('SELECT COUNT(*) AS n FROM notifications').get().n,
+    documents: db.prepare('SELECT COUNT(*) AS n FROM documents').get().n,
     sessions: db.prepare('SELECT COUNT(*) AS n FROM sessions').get().n,
     schemaVersion: Number(metaGet('schema_version') || 0),
     jsonMigratedAt: metaGet('json_migrated_at'),
@@ -427,6 +506,7 @@ module.exports = {
   init, close, stats,
   getUsers, replaceUsers, findUserByUsername, findUserById, countUsers,
   getProjects, replaceProjects,
+  getDoc, setDoc, deleteDoc,
   appendChange, getChange, updateChange, queryChanges, listAllChanges,
   appendTelemetryBatch, listTelemetryUsers, getTelemetry, clearTelemetry,
   createNotification, listNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications,

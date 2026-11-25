@@ -1,0 +1,28 @@
+[Unit]
+Description=DarkArmy Dossier
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Создайте отдельного пользователя: useradd -r -s /usr/sbin/nologin darkarmy
+User=darkarmy
+Group=darkarmy
+WorkingDirectory=/opt/darkarmy-dossier
+Environment=NODE_ENV=production
+# Секреты — в /etc/darkarmy-dossier.env (chmod 600) или в .env рядом с проектом.
+EnvironmentFile=/etc/darkarmy-dossier.env
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=15
+# Ограничение ресурсов (при необходимости)
+# MemoryMax=2G
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/darkarmy-dossier/data /opt/darkarmy-dossier/../backups /srv/darkarmy-projects
+
+[Install]
+WantedBy=multi-user.target
