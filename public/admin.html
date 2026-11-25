@@ -32,6 +32,7 @@
 <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
 <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></symbol>
 <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></symbol>
 <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
 <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></symbol>
 <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
@@ -82,6 +83,9 @@
     </div>
     <div class="dash-actions">
       <button id="dashboardRefresh"><svg class="ico sm"><use href="#i-refresh"/></svg> Обновить</button>
+      <button id="exportDataBtn" title="Скачать метаданные (пользователи, проекты, документы) в JSON"><svg class="ico sm"><use href="#i-download"/></svg> Экспорт</button>
+      <button id="importDataBtn" title="Импортировать метаданные из JSON-экспорта"><svg class="ico sm"><use href="#i-upload"/></svg> Импорт</button>
+      <input id="importDataFile" type="file" accept="application/json,.json" hidden>
       <button id="backupRunBtn" class="primary"><svg class="ico sm"><use href="#i-download"/></svg> Создать бэкап</button>
     </div>
   </div>

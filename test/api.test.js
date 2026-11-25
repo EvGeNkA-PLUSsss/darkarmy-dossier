@@ -12,6 +12,7 @@ process.env.PROJECTS_ROOT = path.join(tmp, 'projects');
 process.env.BACKUP_DIR = path.join(tmp, 'backups');
 process.env.SESSION_SECRET = 'api-secret';
 process.env.LOGIN_MAX_ATTEMPTS = '1000';
+process.env.IMPORT_MAX_ATTEMPTS = '1000';
 process.env.ADMIN_PASSWORD = 'AdminTest123!Pass';
 process.env.NODE_ENV = 'test';
 
@@ -432,4 +433,55 @@ test('канбан задач: статусы, порядок, исполнит�
   assert.ok(found, 'задача должна быть в списке');
   assert.ok(['todo', 'doing', 'done'].includes(found.status));
   assert.equal(typeof found.order, 'number');
+});
+
+test('экспорт/импорт: только админ, проверка формата и подтверждения', async () => {
+  const member = makeClient();
+  await member.login('member2', 'MemberTest123!');
+  assert.equal((await member.request('/api/admin/export')).status, 403);
+
+  const exp = await admin.request('/api/admin/export');
+  assert.equal(exp.status, 200);
+  assert.match(exp.headers.get('content-disposition') || '', /attachment/);
+  const snapshot = await exp.json();
+  assert.equal(snapshot.app, 'darkarmy-dossier');
+  assert.equal(snapshot.version, 1);
+  assert.ok(Array.isArray(snapshot.users) && snapshot.users.length >= 2);
+  assert.ok(Array.isArray(snapshot.projects));
+  assert.ok(snapshot.documents && typeof snapshot.documents === 'object');
+
+  // подтверждение обязательно
+  const noConfirm = await admin.json('/api/admin/import', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ snapshot }),
+  });
+  assert.equal(noConfirm.res.status, 400);
+
+  // чужой формат
+  const wrong = await admin.json('/api/admin/import', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: 'REPLACE', snapshot: { app: 'other', version: 1, users: [] } }),
+  });
+  assert.equal(wrong.res.status, 400);
+
+  // снимок без администратора запрещён
+  const noAdmin = await admin.json('/api/admin/import', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: 'REPLACE', snapshot: { app: 'darkarmy-dossier', version: 1, users: [{ id: 'u1', username: 'x', role: 'user' }], projects: [], documents: {} } }),
+  });
+  assert.equal(noAdmin.res.status, 400);
+
+  // валидный импорт (roundtrip экспорта)
+  const imported = await admin.json('/api/admin/import', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: 'REPLACE', mode: 'replace', snapshot }),
+  });
+  assert.equal(imported.res.status, 200, JSON.stringify(imported.body));
+  assert.equal(imported.body.users, snapshot.users.length);
+  assert.equal(imported.body.projects, snapshot.projects.length);
+
+  // после замены пользователей текущая сессия админа продолжает работать
+  const me = await admin.json('/api/me');
+  assert.equal(me.res.status, 200);
+  assert.equal(me.body.user.username, 'admin');
 });

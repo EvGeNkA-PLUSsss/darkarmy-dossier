@@ -22,6 +22,7 @@ module.exports = function createSystemRouter(deps) {
   const { cfg, storage, darcus, logger, logChange, requireSelfAdmin, serverStartTime, paths } = deps;
   const router = express.Router();
   const rateLimitBackup = util.makeRateLimiter(60 * 1000, 3, 'Бэкап: слишком часто, подождите минуту');
+  const rateLimitImport = util.makeRateLimiter(5 * 60 * 1000, cfg.limits.importMaxAttempts || 2, 'Импорт: слишком часто, подождите 5 минут');
 
   router.get('/api/admin/dashboard', requireSelfAdmin, async (req, res) => {
     const stats = storage.stats();
@@ -70,6 +71,32 @@ module.exports = function createSystemRouter(deps) {
         logChange({ user: req.user.username, action: 'backup', details: includeProjects ? 'с проектами' : 'только метаданные' });
         res.json({ ok: true, output: String(stdout).trim().split('\n').slice(-6), backups: util.listBackups(paths.backupDir) });
       });
+  });
+
+  /* ---------- Экспорт/импорт метаданных ---------- */
+  router.get('/api/admin/export', requireSelfAdmin, (req, res) => {
+    const snapshot = storage.exportSnapshot();
+    const day = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="darkarmy-dossier-${day}.json"`);
+    res.json(snapshot);
+  });
+
+  router.post('/api/admin/import', requireSelfAdmin, rateLimitImport, (req, res) => {
+    const { confirm, mode, snapshot } = req.body || {};
+    if (confirm !== 'REPLACE')
+      return res.status(400).json({ error: 'Подтвердите импорт: confirm = "REPLACE"' });
+    try {
+      const result = storage.importSnapshot(snapshot, { mode: mode === 'merge' ? 'merge' : 'replace' });
+      logChange({
+        user: req.user.username, action: 'admin-import',
+        details: `режим ${result.mode}: пользователей ${result.users}, проектов ${result.projects}, документов ${result.documents}`,
+      });
+      logger.warn({ user: req.user.username, ...result }, 'metadata import');
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
   });
 
   /* ---------- Телеметрия ---------- */

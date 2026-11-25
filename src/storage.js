@@ -472,6 +472,67 @@ function clearNotifications(username) {
   db.prepare('DELETE FROM notifications WHERE username = ?').run(username);
 }
 
+/* ---------- Экспорт/импорт метаданных ---------- */
+const SNAPSHOT_APP = 'darkarmy-dossier';
+const SNAPSHOT_VERSION = 1;
+
+function exportSnapshot() {
+  const documents = {};
+  for (const row of db.prepare('SELECT name, payload FROM documents').all()) {
+    try { documents[row.name] = JSON.parse(row.payload); } catch {}
+  }
+  return {
+    app: SNAPSHOT_APP,
+    version: SNAPSHOT_VERSION,
+    exportedAt: nowIso(),
+    users: getUsers(),
+    projects: getProjects(),
+    documents,
+  };
+}
+
+function importSnapshot(snapshot, { mode = 'replace' } = {}) {
+  if (!snapshot || typeof snapshot !== 'object')
+    throw new Error('Пустой снимок данных');
+  if (snapshot.app !== SNAPSHOT_APP)
+    throw new Error('Неверный формат файла (ожидается экспорт DarkArmy Dossier)');
+  if (snapshot.version !== SNAPSHOT_VERSION)
+    throw new Error('Неподдерживаемая версия снимка: ' + snapshot.version);
+  const users = Array.isArray(snapshot.users) ? snapshot.users : [];
+  const projects = Array.isArray(snapshot.projects) ? snapshot.projects : [];
+  const documents = (snapshot.documents && typeof snapshot.documents === 'object') ? snapshot.documents : {};
+  if (!users.length) throw new Error('В снимке нет пользователей');
+  if (!users.some(u => u && u.role === 'admin')) throw new Error('В снимке нет администратора');
+  for (const u of users) {
+    if (!u || typeof u.id !== 'string' || typeof u.username !== 'string')
+      throw new Error('Некорректная запись пользователя');
+  }
+  for (const p of projects) {
+    if (!p || typeof p.id !== 'string') throw new Error('Некорректная запись проекта');
+  }
+  const replace = mode === 'replace';
+  tx(() => {
+    if (replace) {
+      db.exec('DELETE FROM users');
+      db.exec('DELETE FROM projects');
+      db.exec('DELETE FROM documents');
+    }
+    const uStmt = db.prepare('INSERT OR REPLACE INTO users (id, username, payload) VALUES (?, ?, ?)');
+    for (const u of users) uStmt.run(u.id, u.username, JSON.stringify(u));
+    const pStmt = db.prepare('INSERT OR REPLACE INTO projects (id, payload) VALUES (?, ?)');
+    for (const p of projects) pStmt.run(p.id, JSON.stringify(p));
+    const dStmt = db.prepare(`INSERT INTO documents (name, payload, updated_at) VALUES (?, ?, ?)
+                              ON CONFLICT(name) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`);
+    for (const [name, value] of Object.entries(documents)) dStmt.run(name, JSON.stringify(value), nowIso());
+  });
+  return {
+    mode: replace ? 'replace' : 'merge',
+    users: users.length,
+    projects: projects.length,
+    documents: Object.keys(documents).length,
+  };
+}
+
 /* ---------- Диагностика ---------- */
 function stats() {
   const file = path.join(dataDir, 'dossier.db');
@@ -510,5 +571,6 @@ module.exports = {
   appendChange, getChange, updateChange, queryChanges, listAllChanges,
   appendTelemetryBatch, listTelemetryUsers, getTelemetry, clearTelemetry,
   createNotification, listNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications,
+  exportSnapshot, importSnapshot,
   createSessionStore,
 };

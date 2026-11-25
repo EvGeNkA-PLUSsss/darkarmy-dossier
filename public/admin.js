@@ -29,6 +29,9 @@ const icon = (name, cls='') => `<svg class="ico ${cls}" aria-hidden="true"><use 
   document.getElementById('createUserForm').onsubmit = createUser;
   document.getElementById('dashboardRefresh').onclick = loadDashboard;
   document.getElementById('backupRunBtn').onclick = runBackup;
+  document.getElementById('exportDataBtn').onclick = exportMetadata;
+  document.getElementById('importDataBtn').onclick = () => document.getElementById('importDataFile').click();
+  document.getElementById('importDataFile').onchange = importMetadata;
   document.getElementById('refreshChanges').onclick = loadChanges;
   document.getElementById('refreshPunishments').onclick = loadPunishments;
   document.getElementById('refreshInvites').onclick = loadInvites;
@@ -39,6 +42,9 @@ const icon = (name, cls='') => `<svg class="ico ${cls}" aria-hidden="true"><use 
   document.getElementById('invitesFilter').addEventListener('change', renderInvites);
   document.getElementById('genInviteForm').onsubmit = generateInvites;
   document.getElementById('manualInviteForm').onsubmit = createManualInvite;
+
+  // По умолчанию открываем «Обзор» (раньше показывалась вкладка «Пользователи»).
+  switchTab('dashboard');
 
   if (me.role === 'admin') {
     document.getElementById('telemetryTab').style.display = '';
@@ -223,6 +229,59 @@ async function runBackup() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = old;
+  }
+}
+
+/* ============ Экспорт / импорт метаданных ============ */
+async function exportMetadata() {
+  try {
+    const r = await fetch('/api/admin/export');
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      throw new Error(d.error || r.statusText);
+    }
+    const blob = await r.blob();
+    const cd = r.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="([^"]+)"/);
+    const name = (m && m[1]) || 'darkarmy-dossier-export.json';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  } catch (e) {
+    _alert('Экспорт не удался: ' + e.message);
+  }
+}
+
+async function importMetadata(e) {
+  const input = e.target;
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  let snapshot;
+  try { snapshot = JSON.parse(await file.text()); }
+  catch { return _alert('Файл не является корректным JSON'); }
+  if (!snapshot || snapshot.app !== 'darkarmy-dossier')
+    return _alert('Это не файл экспорта DarkArmy Dossier');
+  const counts = `Пользователей: ${(snapshot.users || []).length}\n` +
+    `Проектов: ${(snapshot.projects || []).length}\n` +
+    `Документов: ${Object.keys(snapshot.documents || {}).length}`;
+  if (!await _confirm(`Импортировать метаданные?\n\n${counts}\n\nТекущие пользователи, проекты и документы будут заменены. Файлы на диске не затрагиваются.`)) return;
+  if (!await _confirm('Точно заменить? Без бэкапа это не отменить.')) return;
+  try {
+    const r = await fetch('/api/admin/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: 'REPLACE', mode: 'replace', snapshot }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    await _alert(`Импорт завершён.\nПользователей: ${d.users}, проектов: ${d.projects}, документов: ${d.documents}`);
+    await loadDashboard();
+    await loadUsers().catch(() => {});
+  } catch (err) {
+    _alert('Импорт не удался: ' + err.message);
   }
 }
 
