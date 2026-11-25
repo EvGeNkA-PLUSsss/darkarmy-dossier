@@ -102,7 +102,7 @@ function startBrowserSpeechRecognition(btn) {
         inp.dispatchEvent(new Event('input'));
         try { autoGrowResize(inp); } catch {}
         inp.focus();
-        if ((btn.dataset.mic || '') === 'darcusInput' && darcusVoiceModeOn()) {
+        if ((btn.dataset.mic || '') === 'darcusInput' && darcusVoiceAutoSendOn()) {
           const form = document.getElementById('darcusForm');
           if (form) setTimeout(() => form.requestSubmit(), 80);
         }
@@ -213,8 +213,8 @@ async function sendAudioForTranscribe(blob, targetInputId, btn) {  if (btn) { bt
       inp.dispatchEvent(new Event('input'));
       try { autoGrowResize(inp); } catch {}
       inp.focus();
-      // Голосовой режим: распознанный текст сразу отправляем в Darcus.
-      if (targetInputId === 'darcusInput' && darcusVoiceModeOn() && (d.text || '').trim()) {
+      // Голосовой режим: текст остаётся в поле, пока не включена авто-отправка.
+      if (targetInputId === 'darcusInput' && darcusVoiceAutoSendOn() && (d.text || '').trim()) {
         const form = document.getElementById('darcusForm');
         if (form) setTimeout(() => form.requestSubmit(), 80);
       }
@@ -264,6 +264,22 @@ function setDarcusAutoApply(on) {
   localStorage.setItem('darcusAutoApply', on ? '1' : '0');
   updateDarcusAutoApplyBtn();
   showToast(on ? 'Darcus: действия без подтверждения' : 'Darcus: подтверждение включено');
+}
+
+/* ---------- Darcus: авто-отправка распознанной речи ---------- */
+function darcusVoiceAutoSendOn() { return localStorage.getItem('darcusVoiceAutoSend') === '1'; }
+function updateDarcusVoiceAutoSendBtn() {
+  const b = document.getElementById('darcusVoiceAutoSendBtn');
+  if (!b) return;
+  b.classList.toggle('active', darcusVoiceAutoSendOn());
+  b.title = darcusVoiceAutoSendOn()
+    ? 'Авто-отправка распознанной речи включена'
+    : 'Авто-отправка распознанной речи (по умолчанию выключена — текст остаётся в поле, можно проверить)';
+}
+function setDarcusVoiceAutoSend(on) {
+  localStorage.setItem('darcusVoiceAutoSend', on ? '1' : '0');
+  updateDarcusVoiceAutoSendBtn();
+  showToast(on ? 'Голос: распознанное будет отправляться сразу' : 'Голос: текст останется в поле для проверки');
 }
 
 /* ---------- State ---------- */
@@ -3284,6 +3300,8 @@ function initDarcus() {
   if (voiceBtn) { updateVoiceModeBtn(); voiceBtn.onclick = () => { closeDarcusChatPanel(); setDarcusVoiceMode(!darcusVoiceModeOn()); }; }
   const autoBtn = document.getElementById('darcusAutoApplyBtn');
   if (autoBtn) { updateDarcusAutoApplyBtn(); autoBtn.onclick = () => { closeDarcusChatPanel(); setDarcusAutoApply(!darcusAutoApplyOn()); }; }
+  const autoSendBtn = document.getElementById('darcusVoiceAutoSendBtn');
+  if (autoSendBtn) { updateDarcusVoiceAutoSendBtn(); autoSendBtn.onclick = () => { setDarcusVoiceAutoSend(!darcusVoiceAutoSendOn()); }; }
 
   /* [NEW] Stop button — добавляем динамически */
   const stopBtn = document.createElement('button');
