@@ -1350,7 +1350,13 @@ function transcribeWithPython(buffer, w, language) {
   return new Promise((resolve, reject) => {
     const p = child.spawn(python, [script, String(model), tmp, lang], {
       windowsHide: true,
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONUTF8: '1',
+        STT_HOTWORDS: w.hotwords || 'реферат, документ, проект, файл, папка, изображение, распознавание, контекст, Darcus, Dossier, DarkArmy, Silero, Whisper, администратор, подписка, приглашение, телеметрия',
+        STT_INITIAL_PROMPT: w.initialPrompt || 'Пользователь надиктовывает запрос или текст документа для проекта DarkArmy Dossier. В речи часто встречаются слова: реферат, документ, проект, файл, Darcus, распознавание, контекст.',
+      },
     });
     let stdout = '', stderr = '';
     const timer = setTimeout(() => { try { p.kill(); } catch {} reject(new Error('faster-whisper timeout')); }, 180000);

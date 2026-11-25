@@ -133,6 +133,9 @@ Whisper и TTS включаются переменными `WHISPER_BIN`, `WHISP
 - **STT**: если заданы `WHISPER_BIN` и `WHISPER_MODEL` — используется Whisper;
   если в админке включён **faster-whisper** — локальный Whisper на Python;
   иначе браузерное Web Speech API (Chrome/Edge, нужен HTTPS или localhost).
+  Для локального Whisper включены **hotwords** и начальный prompt по терминам
+  Dossier («реферат», «документ», «Darcus», «распознавание»…), а также
+  автоисправление типичных ошибок (`ресират` → `реферат`, `дакумент` → `документ`).
 - **TTS**: по умолчанию браузерный синтез (выбирается русский голос ОС). Для
   качественного голоса используется локальный **Silero v5.6 RU** (сервер
   `scripts/silero_tts_server.py`, голоса `aidar/baya/kseniya/xenia/eugene`).
