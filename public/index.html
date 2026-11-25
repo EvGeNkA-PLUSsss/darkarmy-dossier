@@ -364,6 +364,12 @@
       <div class="chat-messages darcus-messages" id="darcusMessages"></div>
       <!-- ▼ Превью вложений — ПЕРЕД формой -->
       <div id="darcusAttachPreview" class="attach-preview" style="display:none"></div>
+      <!-- ▼ Индикатор контекста -->
+      <div id="darcusContextBar" class="darcus-context-bar" style="display:none">
+        <span id="darcusContextText" class="darcus-context-text"></span>
+        <span class="darcus-context-track"><i id="darcusContextFill"></i></span>
+        <button type="button" id="darcusContextNewChat" class="darcus-context-new">Новый чат</button>
+      </div>
       <form class="chat-form" id="darcusForm">
         <button type="button" class="mic-btn" data-mic="darcusInput" title="Голосовой ввод"><svg class="ico"><use href="#i-microphone"/></svg></button>
         <button type="button" class="attach-btn" id="darcusAttachBtn" title="Прикрепить"><svg class="ico"><use href="#i-paperclip"/></svg></button>

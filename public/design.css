@@ -1140,7 +1140,32 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
   .sidebar-actions .side-btn .ico { display: none; }
 }
 
-/* Darcus: шапка не должна вылезать за край на телефоне */
+/* Индикатор контекста Darcus */
+.darcus-context-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-top: 1px solid var(--border);
+  font-size: var(--fs-1); color: var(--muted); background: var(--bg-elev);
+}
+.darcus-context-text { flex: 0 0 auto; }
+.darcus-context-track { flex: 1 1 auto; height: 5px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.darcus-context-track i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .25s; }
+.darcus-context-bar.warn .darcus-context-track i { background: #f5b041; }
+.darcus-context-bar.limit .darcus-context-track i { background: #ef4444; }
+.darcus-context-bar.limit .darcus-context-text { color: #ff8a8a; font-weight: 600; }
+.darcus-context-new {
+  background: none; border: none; color: var(--accent); cursor: pointer;
+  font-size: var(--fs-1); text-decoration: underline; padding: 0 2px;
+}
+.chat-form.context-limit { opacity: .55; }
+
+/* Интерактивные предложения Darcus */
+.darcus-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.darcus-suggestions button {
+  border: 1px solid var(--border-soft); background: var(--surface-2); color: var(--text);
+  border-radius: 999px; padding: 5px 10px; font-size: var(--fs-2); cursor: pointer;
+  text-align: left; line-height: 1.3; max-width: 100%;
+}
+.darcus-suggestions button:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .darcus-head { flex-wrap: wrap; row-gap: 6px; }
 .darcus-head .darcus-brand { flex: 0 0 auto; }
 .darcus-head .darcus-sub { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

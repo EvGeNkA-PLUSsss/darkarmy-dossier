@@ -3337,7 +3337,7 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
       }
     }
 
-    res.write(`event: done\ndata: ${JSON.stringify({ sources: result.sources, web: result.web, wiki: result.wiki })}\n\n`);
+    res.write(`event: done\ndata: ${JSON.stringify({ sources: result.sources, web: result.web, wiki: result.wiki, context: result.context })}\n\n`);
   } catch (e) {
     logger.warn({ err: e.message, user: req.user.username }, 'darcus chat failed');
     res.write(`event: error\ndata: ${JSON.stringify({ error: e.message })}\n\n`);

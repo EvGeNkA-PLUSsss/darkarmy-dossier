@@ -1008,6 +1008,31 @@ async function wikiSearch(q, limit) {
 }
 
 /* ================== Darcus ================== */
+/* Правила качества и интерактивные предложения после ответа. */
+const QUALITY_PROMPT = `
+
+=== КАЧЕСТВО ОТВЕТА ===
+- Сначала суть, потом детали; никакой воды и повторов.
+- Если вопрос про файлы проекта — опирайся на контекст и указывай пути.
+- Длинный ответ разбивай на логические части; не обрывай мысль на полуслове.
+  Если ответ не помещается, дай законченную первую часть и предложи продолжить.
+- Не выдумывай факты; если данных нет — честно скажи и предложи, что проверить.
+- Соблюдай Markdown: заголовки, списки, таблицы только когда это реально улучшает читаемость.`;
+
+const SUGGEST_PROMPT = `
+
+=== ПРЕДЛОЖЕНИЯ ДАЛЬНЕЙШИХ ШАГОВ ===
+В самом конце ответа добавь ровно один блок (и ничего после него):
+<<<SUGGESTIONS>>>
+["короткий следующий вопрос или команда 1","вариант 2","вариант 3"]
+<<<END SUGGESTIONS>>>
+Правила:
+- 2–4 варианта на русском, каждый до 80 символов;
+- это должны быть полезные следующие шаги именно по текущему ответу/файлу,
+  например «Продолжить реферат», «Сократить до 1 страницы», «Добавь примеры»;
+- не повторяй вопрос пользователя и не пиши общие фразы вроде «Чем помочь?»;
+- сам блок не упоминай в тексте и не оборачивай в тройные кавычки.`;
+
 async function darcusAsk({ user, projects, projectId, history, query, attachments, editingFile, stylePreset, voiceMode, onChunk, onRequest }) {
   const cfg = loadAiConfig();
   const project = projects.find(p => p.id === projectId);
@@ -1066,6 +1091,7 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
   const preset = (cfg.stylePresets && stylePreset) ? cfg.stylePresets[stylePreset] : null;
   let sysPrompt = applySubs(cfg.prompts.system, subs);
   if (preset && preset.systemSuffix) sysPrompt += preset.systemSuffix;
+  sysPrompt += QUALITY_PROMPT + SUGGEST_PROMPT;
   if (voiceMode) {
     sysPrompt += '\n\n=== ГОЛОСОВОЙ РЕЖИМ ===\n' +
       'Ответ будет озвучен вслух. Отвечай КРАТКО: 1–3 предложения, простой разговорный текст. ' +
@@ -1105,7 +1131,8 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
       ...subs, query, attachments: attachmentsTrimmed,
       // Компактный контекст: qwen2.5vl теряет изображение при длинном промпте.
       context: contextTrimmed.slice(0, 900), history: historyTrimmed.slice(0, 600),
-    }) + (voiceMode ? '\n\nГОЛОСОВОЙ РЕЖИМ: ответ озвучивается — отвечай кратко, 1–3 предложениями, без списков и Markdown.' : '');
+    }) + (voiceMode ? '\n\nГОЛОСОВОЙ РЕЖИМ: ответ озвучивается — отвечай кратко, 1–3 предложениями, без списков и Markdown.' : '')
+      + SUGGEST_PROMPT;
     messages = [{ role: 'user', content: visionPrompt, images: imageParts }];
     modelOpts = { model: visionModel, temperature: 0.2 };
   } else {
@@ -1123,8 +1150,15 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
   let answer = await ollamaChatStream(messages, modelOpts, onChunk);
   answer = stripSpecialTokens(answer);
   if (!answer.trim()) throw new Error('Модель вернула пустой ответ. Попробуйте ещё раз или выберите другую модель.');
+  // Оценка занятого контекста: примерно 3.2 символа на токен для русского.
+  const promptChars = messages.reduce((n, m) =>
+    n + String(m.content || '').length + (Array.isArray(m.images) ? m.images.length * 6000 : 0), 0);
+  const limit = Number(cfg.ollama && cfg.ollama.numCtx) || 8192;
+  const used = Math.ceil((promptChars + answer.length) / 3.2);
+  const percent = Math.max(0, Math.min(100, Math.round(used / limit * 100)));
   return {
     answer,
+    context: { used, limit, percent, remaining: Math.max(0, limit - used), nearLimit: percent >= 90 },
     sources: rag.slice(0, 8).map(r => ({ projectId: r.projectId, projectName: r.projectName, path: r.path, kind: r.kind })),
     web: ddg.slice(0, 4).map(w => ({ title: w.title, url: w.url })),
     wiki: wiki.slice(0, 2).map(w => ({ title: w.title, url: w.url }))
@@ -1258,6 +1292,7 @@ function prepareTtsText(input) {
   // HTML-плашки действий и любые теги в речь не попадают.
   t = t.replace(/<div[^>]*darcus-action-done[^>]*>[\s\S]*?<\/div>/gi, ' ')
        .replace(/<[^>]+>/g, ' ')
+       .replace(/<<<\s*SUGGESTIONS?\s*>>>[\s\S]*?(?:<<<\s*END\s*SUGGESTIONS?\s*>>>|$)/gi, ' ')
        .replace(/✅\s*Darcus\s+[^.\n]*?(?=[.!?\n]|$)/gi, ' ');
   t = t.replace(/https?:\/\/\S+/gi, ' ').replace(/```[\s\S]*?```/g, ' ').replace(/`[^`]*`/g, ' ');
   // Ctrl+S и подобные сочетания — до замены «+» на «и»

@@ -297,6 +297,7 @@ const state = {
   applyingRemote: false, draggingPath: null, punishTarget: null,
   darcusChats: [], darcusCurrentChatId: null,
   darcus: { messages: [], streaming: false, streamingId: null, attachments: [], abortController: null },
+  darcusContext: null,
   inlineEditFile: null,
   subscription: { active: false, until: null, forceAdmin: false },
   adsData: null, adsTimers: new Map(),
@@ -3302,6 +3303,8 @@ function initDarcus() {
   if (autoBtn) { updateDarcusAutoApplyBtn(); autoBtn.onclick = () => { closeDarcusChatPanel(); setDarcusAutoApply(!darcusAutoApplyOn()); }; }
   const autoSendBtn = document.getElementById('darcusVoiceAutoSendBtn');
   if (autoSendBtn) { updateDarcusVoiceAutoSendBtn(); autoSendBtn.onclick = () => { setDarcusVoiceAutoSend(!darcusVoiceAutoSendOn()); }; }
+  const ctxNewBtn = document.getElementById('darcusContextNewChat');
+  if (ctxNewBtn) ctxNewBtn.onclick = () => createDarcusChat();
 
   // Клик по «✅ Darcus создал файл: <файл>» открывает этот файл в Dossier.
   if (!document._darcusActionLinkBound) {
@@ -3470,6 +3473,7 @@ async function createDarcusChat() {
   try {
     const d = await fetchJson('/api/darcus/chats', { method: 'POST' });
     state.darcusCurrentChatId = d.chat.id; state.darcus.messages = [];
+    updateDarcusContext(null);
     closeDarcusChatPanel();
     await loadDarcusChats();
     if (d.reused) { try { const full = await fetchJson('/api/darcus/chats/' + encodeURIComponent(d.chat.id)); state.darcus.messages = (full.chat.messages || []).map(m => ({ id: m.id, role: m.role, content: m.content, attachments: m.attachments || [], sources: m.sources || [], web: m.web || [], wiki: m.wiki || [] })); } catch {} }
@@ -3491,6 +3495,7 @@ async function openDarcusChat(id) {
   try {
     const d = await fetchJson('/api/darcus/chats/' + encodeURIComponent(id));
     state.darcusCurrentChatId = id;
+    updateDarcusContext(null);
     closeDarcusChatPanel();
     state.darcus.messages = (d.chat.messages || []).map(m => ({
       id: m.id, role: m.role, content: m.content,
@@ -3500,6 +3505,61 @@ async function openDarcusChat(id) {
     renderDarcusChatSelect(); renderDarcusMessages(); refreshDarcusView();
   } catch (e) { console.warn(e); }
 }
+/* Индикатор контекста и блокировка ввода при заполнении */
+function updateDarcusContext(ctx) {
+  state.darcusContext = ctx || null;
+  const bar = document.getElementById('darcusContextBar');
+  const text = document.getElementById('darcusContextText');
+  const fill = document.getElementById('darcusContextFill');
+  const form = document.getElementById('darcusForm');
+  const input = document.getElementById('darcusInput');
+  const submit = form ? form.querySelector('button[type=submit]') : null;
+  if (!bar) return;
+  if (!ctx) {
+    bar.style.display = 'none';
+    bar.classList.remove('warn', 'limit');
+    if (form) form.classList.remove('context-limit');
+    if (input) { input.disabled = false; input.placeholder = 'Спросите Darcus…'; }
+    if (submit) submit.disabled = false;
+    return;
+  }
+  const pct = Math.max(0, Math.min(100, Number(ctx.percent) || 0));
+  bar.style.display = '';
+  bar.classList.toggle('warn', pct >= 70 && pct < 95);
+  bar.classList.toggle('limit', pct >= 95);
+  if (text) text.textContent = pct >= 95
+    ? `Контекст заполнен: ${pct}% · начните новый чат`
+    : `Контекст: ${pct}% · осталось ≈${Math.max(0, Number(ctx.remaining) || 0)} токенов`;
+  if (fill) fill.style.width = pct + '%';
+  const full = pct >= 95;
+  if (form) form.classList.toggle('context-limit', full);
+  if (input) {
+    input.disabled = full;
+    input.placeholder = full ? 'Контекст заполнен — начните новый чат' : 'Спросите Darcus…';
+  }
+  if (submit) submit.disabled = full;
+}
+
+/* Предложения следующих шагов (как в ChatGPT) */
+function extractSuggestions(text) {
+  const re = /<<<\s*SUGGESTIONS?\s*>>>([\s\S]*?)(?:<<<\s*END\s*SUGGESTIONS?\s*>>>|$)/i;
+  const m = String(text || '').match(re);
+  if (!m) return { text: String(text || ''), suggestions: [] };
+  let arr = [];
+  const body = m[1].trim();
+  try {
+    const j = JSON.parse(body);
+    if (Array.isArray(j)) arr = j;
+  } catch {}
+  if (!arr.length) {
+    arr = body.split(/\n+/).map(s => s.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').replace(/^["'«]|["'»]$/g, '').trim());
+  }
+  arr = arr.map(s => String(s || '').trim()).filter(s => s.length >= 2 && s.length <= 160).slice(0, 4);
+  return { text: (String(text || '').slice(0, m.index) + String(text || '').slice(m.index + m[0].length)).trim(), suggestions: arr };
+}
+function stripSuggestions(text) { return extractSuggestions(text).text; }
+function visibleDarcusText(text) { return stripSuggestions(stripAiActions(text || '')).trim(); }
+
 function renderDarcusMessages() {
   const box = document.getElementById('darcusMessages'); if (!box) return;
   box.innerHTML = '';
@@ -3539,7 +3599,9 @@ function buildDarcusMsgEl(m) {
     }
     return el;
   }
-  const stripped = stripAiActions(m.content || '');
+  const parsedAnswer = extractSuggestions(m.content || '');
+  const stripped = stripSuggestions(stripAiActions(parsedAnswer.text));
+  const suggestions = parsedAnswer.suggestions;
   const isEmpty = !stripped.trim();
   // [FIX] Пока текста нет — показываем лёгкий плейсхолдер вместо пустоты
   const html = isEmpty
@@ -3553,7 +3615,10 @@ function buildDarcusMsgEl(m) {
     for (const w of (m.wiki || []).slice(0, 2)) parts.push(`<a href="${escapeHtml(w.url)}" target="_blank" rel="noopener">${icon('book','sm')} ${escapeHtml(w.title)}</a>`);
     sources = `<div class="darcus-sources">${parts.join(' · ')}</div>`;
   }
-  el.innerHTML = `<div class="bubble"><div class="md-body">${html}</div>${sources}<div class="msg-actions">
+  const suggestionsHtml = suggestions.length
+    ? `<div class="darcus-suggestions">${suggestions.map(s => `<button type="button" data-suggestion="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}</div>`
+    : '';
+  el.innerHTML = `<div class="bubble"><div class="md-body">${html}</div>${sources}${suggestionsHtml}<div class="msg-actions">
     <button type="button" class="msg-copy-btn" title="Скопировать ответ">${icon('copy','sm')}</button>
     <button type="button" class="msg-tts-btn" title="Озвучить"><svg class="ico sm"><use href="#i-volume"/></svg></button>
   </div></div>`;
@@ -3566,16 +3631,29 @@ function buildDarcusMsgEl(m) {
   const copyBtn = el.querySelector('.msg-copy-btn');
   if (copyBtn) copyBtn.onclick = ev => {
     ev.stopPropagation();
-    navigator.clipboard.writeText(stripAiActions(m.content || '')).then(
+    navigator.clipboard.writeText(visibleDarcusText(m.content || '')).then(
       () => showToast('Скопировано'),
       () => showToast('Не удалось скопировать')
     );
   };
+  el.querySelectorAll('[data-suggestion]').forEach(btn => {
+    btn.onclick = ev => {
+      ev.stopPropagation();
+      if (state.darcus.streaming) return;
+      const input = document.getElementById('darcusInput');
+      const form = document.getElementById('darcusForm');
+      if (!input || !form) return;
+      input.value = btn.dataset.suggestion || '';
+      input.dispatchEvent(new Event('input'));
+      try { autoGrowResize(input); } catch {}
+      form.requestSubmit();
+    };
+  });
   const ttsBtn = el.querySelector('.msg-tts-btn');
   if (ttsBtn) ttsBtn.onclick = ev => {
     ev.stopPropagation();
     // Убираем markdown-разметку и ACTION-блок для озвучки
-    const plain = stripAiActions(String(m.content || ''))
+    const plain = visibleDarcusText(String(m.content || ''))
       .replace(/```[\s\S]*?```/g, ' (блок кода) ')
       .replace(/`([^`]+)`/g, '$1')
       .replace(/[#*_>~\-]+/g, ' ')
@@ -3668,13 +3746,14 @@ async function sendDarcusQuery(query, attachments) {
         let data = null; try { data = JSON.parse(dataM[1]); } catch { continue; }
         if (ev === 'chunk') {
           msgEl.content += data.text;
-          mdBody.innerHTML = sanitize(mdToHtml(stripAiActions(msgEl.content)));
+          mdBody.innerHTML = sanitize(mdToHtml(visibleDarcusText(msgEl.content)));
           box.scrollTop = box.scrollHeight;
         } else if (ev === 'done') {
           msgEl.sources = data.sources || []; msgEl.web = data.web || []; msgEl.wiki = data.wiki || [];
+          if (data.context) updateDarcusContext(data.context);
         } else if (ev === 'error') {
           msgEl.content += `\n\nОшибка: ${data.error}`;
-          mdBody.innerHTML = sanitize(mdToHtml(stripAiActions(msgEl.content)));
+          mdBody.innerHTML = sanitize(mdToHtml(visibleDarcusText(msgEl.content)));
         }
       }
     }
@@ -4447,6 +4526,7 @@ function cleanTextForTts(text) {
   // Служебную плашку действия не озвучиваем.
   t = t.replace(/<div[^>]*darcus-action-done[^>]*>[\s\S]*?<\/div>/gi, ' ')
        .replace(/<[^>]+>/g, ' ')
+       .replace(/<<<\s*SUGGESTIONS?\s*>>>[\s\S]*?(?:<<<\s*END\s*SUGGESTIONS?\s*>>>|$)/gi, ' ')
        .replace(/```[\s\S]*?```/g, ' ')
        .replace(/`[^`]*`/g, ' ')
        .replace(/https?:\/\/\S+/g, ' ')
