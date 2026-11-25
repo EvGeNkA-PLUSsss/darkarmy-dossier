@@ -133,8 +133,9 @@ JSON, служебные комментарии, обёртки \`\`\`markdown �
 
   vision:
 `Проанализируй изображение и верни СТРОГО JSON (без markdown-обёртки):
-{"description":"краткое описание 1-3 предложения","text":"весь распознанный текст","boxes":[]}
-Если текст не распознан — оставь пустой строкой.`,
+{"description":"краткое описание изображения","text":"весь распознанный текст","boxes":[]}
+Пиши реальное описание именно этого изображения и полный текст, не копируй
+пример полей из инструкции. Если текста нет — оставь пустую строку.`,
 
   template_readme: 'README: описание, установка, использование, лицензия.',
   template_meeting: 'Протокол встречи: дата, участники, повестка, решения, задачи.',
@@ -772,12 +773,42 @@ async function ocrImage(absPath) {
     return { text:'', boxes:[], error: `Модель "${model}" не является vision-моделью (в админке → Darcus выберите vision-модель)` };
   }
   try {
-    const t = await ollamaChat([{ role:'user', content: prompt, images:[b64] }], { model });
+    const t = await ollamaChat([{ role:'user', content: prompt, images:[b64] }], { model, temperature: 0.1 });
     if (/не могу|изображение не|не предоставлен|не вижу картинк|не получено|не удалось получить|не предоставили/i.test(t || '')) {
       return { text:'', boxes:[], error:'vision-model-rejected: ' + (t || '').slice(0, 120) };
     }
-    return { text: stripSpecialTokens(t), boxes: [] };
+    return { text: stripSpecialTokens(t).slice(0, 8000), boxes: [] };
   } catch (e) { return { text:'', boxes:[], error:e.message }; }
+}
+
+// Vision-модели часто возвращают JSON с реальными переводами строк внутри строк
+// (невалидный JSON) или в ```json-обёртке. Разбираем максимально терпимо.
+function parseVisionJson(raw) {
+  let s = stripSpecialTokens(raw)
+    .replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+  let body = '';
+  const m = s.match(/\{[\s\S]*\}/);
+  if (m) body = m[0];
+  else {
+    // Ответ мог обрезаться по лимиту токенов — берём всё после первой `{`.
+    const start = s.indexOf('{');
+    if (start < 0) return null;
+    body = s.slice(start);
+  }
+  try { return JSON.parse(body); } catch {}
+  const unescape = t => String(t || '')
+    .replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  const field = (name) => {
+    let mm = body.match(new RegExp('"' + name + '"\\s*:\\s*"([\\s\\S]*?)"\\s*,', 'i'));
+    if (!mm) mm = body.match(new RegExp('"' + name + '"\\s*:\\s*"([\\s\\S]*?)"\\s*}', 'i'));
+    if (!mm) mm = body.match(new RegExp('"' + name + '"\\s*:\\s*"([\\s\\S]*)$', 'i'));
+    return unescape(mm ? mm[1] : '').replace(/\\+$/, '').trim();
+  };
+  const description = field('description');
+  const text = field('text');
+  if (!description && !text) return null;
+  return { description, text, boxes: [] };
 }
 
 async function describeImage(absPath) {
@@ -791,17 +822,17 @@ async function describeImage(absPath) {
     return { description:'', text:'', boxes:[], error: `Модель "${model}" не является vision-моделью (в админке → Darcus выберите vision-модель)` };
   }
   try {
-    const raw = stripSpecialTokens(await ollamaChat([{ role:'user', content: prompt, images:[b64] }], { model }));
-    const m = raw.match(/\{[\s\S]*\}/);
-    if (m) {
-      try {
-        const j = JSON.parse(m[0]);
-        return {
-          description: String(j.description || '').slice(0, 1000),
-          text: String(j.text || ''),
-          boxes: Array.isArray(j.boxes) ? j.boxes.slice(0, 60) : []
-        };
-      } catch {}
+    const raw = stripSpecialTokens(await ollamaChat([{ role:'user', content: prompt, images:[b64] }], { model, temperature: 0.1 }));
+    const j = parseVisionJson(raw);
+    if (j) {
+      let description = String(j.description || '').slice(0, 1000);
+      // Некоторые модели возвращают текст шаблона вместо описания — не показываем его.
+      if (/краткое описание|весь распознанный текст|строго json|пример/i.test(description)) description = '';
+      return {
+        description,
+        text: String(j.text || '').slice(0, 8000),
+        boxes: Array.isArray(j.boxes) ? j.boxes.slice(0, 60) : []
+      };
     }
     return { description: raw.slice(0, 800), text:'', boxes:[] };
   } catch (e) { return { description:'', text:'', boxes:[], error:e.message }; }
@@ -1185,7 +1216,7 @@ async function transcribeAudio(buffer, opts = {}) {
 module.exports = {
   DEFAULT_CONFIG, DEFAULT_PROMPTS,
   loadAiConfig, saveAiConfig, applySubs, buildSubs,
-  isVisionModel, isVisionModelAsync, stripSpecialTokens, cleanGeneratedMarkdown,
+  isVisionModel, isVisionModelAsync, stripSpecialTokens, cleanGeneratedMarkdown, parseVisionJson,
   ollamaChat, ollamaChatStream, ollamaEmbed, ollamaPing,
   ocrImage, describeImage,
   ragSearch, keywordSearch, semanticSearch,

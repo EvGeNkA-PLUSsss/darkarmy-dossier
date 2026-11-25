@@ -47,3 +47,15 @@ test('loadAiConfig: новые промпты (vision_chat, generate_doc_system)
   assert.ok(cfg.prompts.generate_doc_system.length > 10);
   assert.ok(cfg.prompts.generate_doc.includes('ТОЛЬКО содержимое'));
 });
+
+test('parseVisionJson: понимает ```json и реальные переводы строк в строках', () => {
+  const raw = '```json\n{\n  "description": "Скриншот",\n  "text": "Строка 1\nСтрока 2",\n  "boxes": []\n}\n```';
+  const j = darcus.parseVisionJson(raw);
+  assert.equal(j.description, 'Скриншот');
+  assert.equal(j.text, 'Строка 1\nСтрока 2');
+
+  const flat = darcus.parseVisionJson('{"description":"d","text":"t","boxes":[]}');
+  assert.equal(flat.description, 'd');
+  assert.equal(flat.text, 't');
+  assert.equal(darcus.parseVisionJson('не json'), null);
+});

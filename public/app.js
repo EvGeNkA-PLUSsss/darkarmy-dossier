@@ -204,6 +204,31 @@ const OFFICE_EXT = ['doc','ppt','pptx','odt','odp','rtf'];
 const PDF_EXT    = ['pdf'];
 const isMobile = () => window.matchMedia('(max-width: 900px)').matches;
 
+/* [NEW] Автообновление интерфейса: после рестарта сервера вкладка сама
+   перезагрузится, чтобы не работать со старыми app.js/design.css. */
+function initVersionWatch() {
+  let initial = null;
+  let reloading = false;
+  const check = async () => {
+    if (reloading) return;
+    try {
+      const r = await fetch('/api/version', { cache: 'no-store' });
+      if (!r.ok) return;
+      const d = await r.json();
+      const v = d.build || d.version;
+      if (!initial) { initial = v; return; }
+      if (v && v !== initial) {
+        reloading = true;
+        try { showToast('Интерфейс обновлён — перезагружаю…'); } catch {}
+        setTimeout(() => location.reload(), 800);
+      }
+    } catch {}
+  };
+  check();
+  setInterval(check, 30000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+}
+
 /* =========================================================
    Init
    ========================================================= */
@@ -288,6 +313,7 @@ const isMobile = () => window.matchMedia('(max-width: 900px)').matches;
     safe('tts', initTts);
     safe('selection-menu', initSelectionMenu);
     safe('print', initPrint);
+  safe('version-watch', initVersionWatch);
 
     try { connectSSE(); } catch (e) { console.error('SSE failed:', e); }
 
@@ -2820,7 +2846,9 @@ function initDarcus() {
   stopBtn.id = 'darcusStopBtn';
   stopBtn.className = 'stop-btn';
   stopBtn.title = 'Остановить генерацию';
-  stopBtn.innerHTML = icon('square','sm') + ' Стоп';
+  stopBtn.setAttribute('aria-label', 'Остановить генерацию');
+  // Только иконка: в узкой панели чата текст «Стоп» наезжал на поле ввода.
+  stopBtn.innerHTML = icon('square','sm');
   stopBtn.style.display = 'none';
   stopBtn.onclick = () => {
     if (state.darcus.abortController) {
@@ -3472,18 +3500,30 @@ let ocrState = { path: null, data: null, visible: false };
 async function loadOcrInfo(path) {
   try {
     const d = await fetchJson(`/api/darcus/image-info?projectId=${encodeURIComponent(state.projectId)}&path=${encodeURIComponent(path)}`);
-    ocrState = { path, data: d.item, visible: false };
+    const hasText = !!(d.item && (d.item.text || d.item.description));
+    ocrState = { path, data: d.item, visible: hasText };
     const btn = document.getElementById('ocrToggleBtn');
-    if (d.item && (d.item.text || d.item.description)) { if (btn) btn.style.display = ''; }
+    if (hasText) { if (btn) btn.style.display = ''; }
     else {
       if (btn) btn.style.display = 'none';
       fetchJson('/api/darcus/image-analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, projectId: state.projectId }) })
         .then(res => {
           if (res && res.item && state.currentFile === path) {
-            ocrState = { path, data: res.item, visible: false };
-            if (btn && (res.item.text || res.item.description)) btn.style.display = '';
+            const ok = !!(res.item.text || res.item.description);
+            ocrState = { path, data: res.item, visible: ok };
+            if (btn && ok) btn.style.display = '';
+            if (ok) renderOcrOverlay();
           }
-        }).catch(() => {});
+        }).catch(err => {
+          // Показываем причину, почему OCR не сработал (модель/таймаут), а не молчим.
+          if (state.currentFile !== path) return;
+          const wrap = document.querySelector('#content .ocr-wrap') || document.getElementById('content');
+          if (!wrap) return;
+          const panel = document.createElement('div');
+          panel.className = 'ocr-panel ocr-error';
+          panel.textContent = 'OCR: ' + (err && err.message ? err.message : 'не удалось распознать изображение');
+          wrap.parentNode.insertBefore(panel, wrap.nextSibling);
+        });
     }
   } catch {
     ocrState = { path: null, data: null, visible: false };

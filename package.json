@@ -11,7 +11,7 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/unit.test.js test/storage.test.js test/darcus.test.js test/api.test.js",
+    "test": "node --test test/unit.test.js test/storage.test.js test/darcus.test.js test/ui.test.js test/api.test.js",
     "check": "node --check server.js && node --check darcus.js && node --check config.js && node --check logger.js && node --check extract-text.js && node --check src/storage.js && node --check src/util.js && node --check src/routes/system.js && node --check src/routes/history.js && node --check src/routes/notifications.js && node --check scripts/backup.js && node --check deploy/ecosystem.config.js && node --check public/app.js && node --check public/js/search.js && node --check public/js/history.js && node --check public/js/notifications.js && node --check public/admin.js && node --check public/js/ui-dialog.js && node --check public/js/modal-a11y.js && node --check public/js/login.js && node --check public/js/register.js",
     "backup": "node scripts/backup.js",
     "start:prod": "node --env-file=.env server.js"

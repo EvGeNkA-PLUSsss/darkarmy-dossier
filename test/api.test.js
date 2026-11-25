@@ -76,6 +76,13 @@ test('health отвечает ok', async () => {
   assert.equal(body.status, 'ok');
 });
 
+test('version отдаёт версию и build для автообновления вкладок', async () => {
+  const { res, body } = await admin.json('/api/version');
+  assert.equal(res.status, 200);
+  assert.equal(typeof body.version, 'string');
+  assert.ok(body.build && String(body.build).length > 0);
+});
+
 test('без авторизации закрыты дерево, файлы и админ-API', async () => {
   const anon = makeClient();
   assert.equal((await anon.request('/api/tree?projectId=default')).status, 401);

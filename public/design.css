@@ -859,9 +859,20 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
   .side-btn { font-size: var(--fs-2); }
 }
 
-/* =========================================================
-   Изображения: просмотр, OCR, Darcus-вложения
-   ========================================================= */
+/* Поле чата: кнопки не должны наезжать на textarea (узкая панель 372px). */
+.chat-form { align-items: flex-end; flex-wrap: nowrap; }
+.chat-form textarea { flex: 1 1 auto; min-width: 0; }
+.chat-form .mic-btn,
+.chat-form .attach-btn,
+.chat-form button[type="submit"] { flex: 0 0 auto; }
+.chat-form .stop-btn {
+  width: 38px;
+  min-width: 38px;
+  padding: 0;
+  justify-content: center;
+  align-self: flex-end;
+  flex: 0 0 auto;
+}
 #content > img,
 #content .ocr-wrap img {
   display: block;
@@ -873,6 +884,12 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
 }
 #content .ocr-wrap { display: block; text-align: center; max-width: 100%; }
 #content .ocr-panel { text-align: left; }
+#content .ocr-error {
+  border-color: rgba(239, 68, 68, .45);
+  color: var(--danger-fg, #ff6b6b);
+  background: rgba(239, 68, 68, .08);
+  font-family: var(--font-ui, inherit);
+}
 
 .chat-msg .attach-thumb { max-width: min(260px, 100%); }
 .chat-msg .attach-thumb img { object-fit: contain; background: var(--surface-2); max-height: 260px; }

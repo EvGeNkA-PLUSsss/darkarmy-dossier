@@ -672,6 +672,12 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+const BUILD_ID = String(SERVER_START_TIME); // меняется при каждом рестарте сервера
+app.get('/api/version', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ version: require('./package.json').version, build: BUILD_ID });
+});
+
 app.use(createSystemRouter({
   cfg, storage, darcus, logger, logChange, requireSelfAdmin,
   serverStartTime: SERVER_START_TIME,
