@@ -115,13 +115,17 @@ npm run check
 
 ```
 server.js          Express API (роуты, middleware, бизнес-логика)
-src/storage.js     SQLite-слой: пользователи, проекты, журнал, телеметрия, сессии
+src/storage.js     SQLite-слой: пользователи, проекты, документы, журнал, телеметрия, сессии, уведомления
+src/util.js        общие утилиты: safeJoin, пароли, rate-limit, отдача файлов
+src/routes/        вынесенные роутеры: system (админка/бэкап), history, notifications
 darcus.js          Ollama, RAG, OCR/vision, TTS/STT, промпты
 config.js          конфигурация из env
 logger.js          логи и access-log с ротацией
 extract-text.js    извлечение текста из файлов
 scripts/backup.js  консистентный бэкап БД + данных + проектов
+deploy/            production: Caddy/nginx, systemd, PM2, задачи Windows, гайд
 public/            SPA без сборки: index.html, app.js, admin.js, style.css, vendor/
+public/js/         модули фронтенда: search.js, history.js, notifications.js, ui-dialog.js, modal-a11y.js
 test/              node:test: unit + storage + API
 data/              SQLite-БД, JSON-архив, вложения (не коммитится)
 ```
