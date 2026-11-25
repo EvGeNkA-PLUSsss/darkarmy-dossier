@@ -3560,12 +3560,27 @@ function buildDarcusMsgEl(m) {
   };
   return el;
 }
+/* UUID без secure-context: crypto.randomUUID() есть только на HTTPS/localhost,
+   а по HTTP в локальной сети он undefined и ломал отправку сообщений. */
+function safeUuid() {
+  try { if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID(); } catch {}
+  const b = new Uint8Array(16);
+  try {
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(b);
+    else for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+  } catch { for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256); }
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+  return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+}
+
 async function sendDarcusQuery(query, attachments) {
   if (!state.darcusCurrentChatId) await createDarcusChat();
   const history = state.darcus.messages.filter(m => m.content).slice(-12).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
   const atts = attachments || [];
-  const userMsg = { id: crypto.randomUUID(), role: 'user', content: query, attachments: atts.map(a => ({ name: a.name, kind: a.kind, mime: a.mime, size: a.size, thumb: a.thumb || null })) };
-  const msgEl = { id: crypto.randomUUID(), role: 'assistant', content: '', sources: [], web: [], wiki: [] };
+  const userMsg = { id: safeUuid(), role: 'user', content: query, attachments: atts.map(a => ({ name: a.name, kind: a.kind, mime: a.mime, size: a.size, thumb: a.thumb || null })) };
+  const msgEl = { id: safeUuid(), role: 'assistant', content: '', sources: [], web: [], wiki: [] };
   state.darcus.messages.push(userMsg, msgEl);
   state.darcus.streaming = true;
   state.darcus.streamingId = msgEl.id;
