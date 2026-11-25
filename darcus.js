@@ -1255,6 +1255,10 @@ function translitWord(w) {
 }
 function prepareTtsText(input) {
   let t = String(input || '');
+  // HTML-плашки действий и любые теги в речь не попадают.
+  t = t.replace(/<div[^>]*darcus-action-done[^>]*>[\s\S]*?<\/div>/gi, ' ')
+       .replace(/<[^>]+>/g, ' ')
+       .replace(/✅\s*Darcus\s+[^.\n]*?(?=[.!?\n]|$)/gi, ' ');
   t = t.replace(/https?:\/\/\S+/gi, ' ').replace(/```[\s\S]*?```/g, ' ').replace(/`[^`]*`/g, ' ');
   // Ctrl+S и подобные сочетания — до замены «+» на «и»
   const KEY_RU = { ctrl: 'контрол', shift: 'шифт', alt: 'альт', cmd: 'команд' };

@@ -1109,6 +1109,13 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
   line-height: 1.45;
 }
 .md-body .darcus-action-done code { color: #fff; background: rgba(0,0,0,.25); }
+.md-body .darcus-action-done a.darcus-action-link {
+  color: #d7ffe6;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.md-body .darcus-action-done a.darcus-action-link:hover { color: #fff; background: rgba(255,255,255,.12); }
 
 .sidebar-actions {
   display: grid;

@@ -3303,6 +3303,31 @@ function initDarcus() {
   const autoSendBtn = document.getElementById('darcusVoiceAutoSendBtn');
   if (autoSendBtn) { updateDarcusVoiceAutoSendBtn(); autoSendBtn.onclick = () => { setDarcusVoiceAutoSend(!darcusVoiceAutoSendOn()); }; }
 
+  // Клик по «✅ Darcus создал файл: <файл>» открывает этот файл в Dossier.
+  if (!document._darcusActionLinkBound) {
+    document._darcusActionLinkBound = true;
+    document.addEventListener('click', async e => {
+      const a = e.target && e.target.closest && e.target.closest('.darcus-action-link');
+      if (!a) return;
+      e.preventDefault();
+      const pid = a.dataset.project || state.projectId;
+      const rel = a.dataset.path || '';
+      if (!rel) return;
+      try {
+        if (pid && pid !== state.projectId) await switchProject(pid);
+        if (a.dataset.kind === 'dir') {
+          state.expanded.add(rel);
+          renderTree();
+          const row = listEl.querySelector('.tree-row[data-path="' + CSS.escape(rel) + '"]');
+          if (row) row.scrollIntoView({ block: 'center' });
+        } else {
+          await openFile(rel);
+          try { toggleChat(false); } catch {}
+        }
+      } catch (err) { dlA('Не удалось открыть файл: ' + (err.message || err)); }
+    });
+  }
+
   /* [NEW] Stop button — добавляем динамически */
   const stopBtn = document.createElement('button');
   stopBtn.type = 'button';
@@ -3665,17 +3690,16 @@ async function sendDarcusQuery(query, attachments) {
     if (stopBtn) stopBtn.style.display = 'none';
     renderDarcusMessages();
     loadDarcusChats().catch(()=>{});
-    // Голосовой режим: озвучиваем последний ответ Darcus, но НЕ служебные
-    // подтверждения действий (создание/удаление файлов и т.п.).
+    // [NEW] Обработка запросов ИИ на изменение файлов
+    try { await handleAiActionsFromAnswer(msgEl.content); } catch (e) { console.warn('ai-action', e); }
+    // Голосовой режим: озвучиваем обычный ответ; служебная плашка действия
+    // «✅ Darcus создал файл…» и HTML/теги в озвучку не попадают.
     if (darcusVoiceModeOn()) {
       const lastMsg = [...state.darcus.messages].reverse().find(m => m.role !== 'user' && (m.content || '').trim());
-      const hasActions = lastMsg && extractAiActions(lastMsg.content || '').length > 0;
-      if (lastMsg && !hasActions) setTimeout(() => {
+      if (lastMsg) setTimeout(() => {
         try { toggleSpeakMessage(lastMsg.id, lastMsg.content || '', null); } catch {}
       }, 350);
     }
-    // [NEW] Обработка запросов ИИ на изменение файлов
-    try { await handleAiActionsFromAnswer(msgEl.content); } catch (e) { console.warn('ai-action', e); }
   }
 }
 
@@ -5136,18 +5160,24 @@ function stripAiActions(text) {
     const scanned = _scanJsonObject(tail);
     let label = 'выполнил действие';
     let path = '';
+    let kind = 'file';
     if (scanned) {
       const j = _parseActionObj(scanned.json);
       if (j) {
         label = labels[j.type] || label;
         path = String(j.path || j.to || '').slice(0, 200);
+        kind = j.type === 'mkdir' ? 'dir' : 'file';
       }
     }
     let consumed = m[0].length + (scanned ? scanned.end : 0);
     const rest = s.slice(m.index + consumed);
     const em = rest.match(/<{2,3}\s*END\s*ACTION\s*>{2,3}/i);
     if (em) consumed += em.index + em[0].length;
-    out += `\n\n<div class="darcus-action-done">✅ <b>Darcus ${label}</b>${path ? ': <code>' + escapeHtml(path) + '</code>' : ''}</div>\n\n`;
+    // Кликабельная строка результата: открывает созданный/изменённый файл в Dossier.
+    const link = path
+      ? `<a href="#" class="darcus-action-link" data-project="${escapeHtml(state.projectId || '')}" data-path="${escapeHtml(path)}" data-kind="${kind}">${escapeHtml(path)}</a>`
+      : '';
+    out += `\n\n<div class="darcus-action-done">✅ <b>Darcus ${label}</b>${link ? ': ' + link : ''}</div>\n\n`;
     last = m.index + consumed;
     markerRe.lastIndex = last;
   }
