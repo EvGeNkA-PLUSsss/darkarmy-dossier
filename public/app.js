@@ -293,7 +293,7 @@ const state = {
   chatCache: { general: [] }, projectMessages: [], projectTasks: [],
   pendingAttachments: { general: [], project: [], ticket: [] },
   currentTicketId: null, tickets: [], ticketCache: {},
-  editingFile: null, editUsers: [], editorChangeTimer: null,
+  editingFile: null, editUsers: [], editDevices: 0, editorChangeTimer: null,
   applyingRemote: false, draggingPath: null, punishTarget: null,
   darcusChats: [], darcusCurrentChatId: null,
   darcus: { messages: [], streaming: false, streamingId: null, attachments: [], abortController: null },
@@ -877,12 +877,16 @@ function connectSSE() {
     renderProjectTasks();
   });
   evtSource.addEventListener('edit-change', e => {
-    const { projectId, file, content, from } = JSON.parse(e.data);
+    const { projectId, file, content, from, fromClientId } = JSON.parse(e.data);
     if (projectId !== state.projectId) return;
     const activeInline = state.inlineEditFile === file;
     const activeModal = state.editingFile === file;
     if (!activeInline && !activeModal) return;
-    if (from === state.user.username) return;
+    // Игнорируем только свою вкладку; другое устройство того же аккаунта
+    // тоже должно получать изменения.
+    if (fromClientId) {
+      if (fromClientId === getEditClientId()) return;
+    } else if (from === state.user.username) return;
     const target = activeModal ? area : document.getElementById('inlineArea');
     if (!target) return;
     const s1 = target.selectionStart, s2 = target.selectionEnd;
@@ -893,10 +897,11 @@ function connectSSE() {
     if (activeModal) updatePreview(); else inlineUpdatePreview();
   });
   evtSource.addEventListener('edit-users', e => {
-    const { projectId, file, users } = JSON.parse(e.data);
+    const { projectId, file, users, devices } = JSON.parse(e.data);
     if (projectId !== state.projectId) return;
     if (file !== state.editingFile && file !== state.inlineEditFile) return;
     state.editUsers = users || [];
+    state.editDevices = devices || (users || []).length;
     updateEditorUsersUI();
     updateInlineEditUsersUI();
   });
@@ -1869,6 +1874,17 @@ function renderOfficeFallback(url) {
   </div>`;
 }
 
+/* Стабильный id вкладки/устройства для совместного редактирования. */
+function getEditClientId() {
+  let id = '';
+  try { id = sessionStorage.getItem('da_edit_client_id') || ''; } catch {}
+  if (!id) {
+    id = (typeof safeUuid === 'function') ? safeUuid() : String(Date.now()) + Math.random().toString(16).slice(2);
+    try { sessionStorage.setItem('da_edit_client_id', id); } catch {}
+  }
+  return id;
+}
+
 /* Markdown */
 function wrapTables(root = contentEl) {
   root.querySelectorAll('table').forEach(t => {
@@ -1919,10 +1935,10 @@ async function openEditor(p) {
     await leaveEditorSession();
   }
   try {
-    const r = await fetch('/api/edit/join', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: p, projectId: state.projectId }) });
+    const r = await fetch('/api/edit/join', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: p, projectId: state.projectId, clientId: getEditClientId() }) });
     if (!r.ok) { let d; try { d = await r.json(); } catch {} return dlA('Не удалось открыть: ' + ((d && d.error) || r.statusText)); }
-    const { content, users } = await r.json();
-    area.value = content; state.editingFile = p; state.editUsers = users || [];
+    const { content, users, devices } = await r.json();
+    area.value = content; state.editingFile = p; state.editUsers = users || []; state.editDevices = devices || (users || []).length;
     if (area._resetInfPad)   area._resetInfPad();
   } catch (e) { return dlA('Ошибка: ' + e.message); }
   // [NEW] Сброс бесконечного скролла для нового файла
@@ -1935,21 +1951,27 @@ async function openEditor(p) {
 }
 async function leaveEditorSession() {
   if (!state.editingFile) return;
-  const file = state.editingFile; state.editingFile = null; state.editUsers = [];
-  try { await fetch('/api/edit/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, projectId: state.projectId }) }); } catch {}
+  const file = state.editingFile; state.editingFile = null; state.editUsers = []; state.editDevices = 0;
+  try { await fetch('/api/edit/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, projectId: state.projectId, clientId: getEditClientId() }) }); } catch {}
   updateEditorUsersUI();
 }
 function updateEditorUsersUI() {
   const el = document.getElementById('editorUsers'); if (!el) return;
   const others = (state.editUsers || []).filter(u => u !== state.user.username);
-  if (!others.length) { el.style.display = 'none'; el.textContent = ''; return; }
-  el.style.display = ''; el.innerHTML = icon('users','sm') + ' ' + escapeHtml(others.join(', '));
+  if (!others.length && (state.editDevices || 0) <= 1) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = '';
+  el.innerHTML = icon('users','sm') + ' ' + (others.length
+    ? escapeHtml(others.join(', '))
+    : escapeHtml('вы (' + state.editDevices + ' устройства)'));
 }
 function updateInlineEditUsersUI() {
   const el = document.getElementById('inlineEditUsers'); if (!el) return;
   const others = (state.editUsers || []).filter(u => u !== state.user.username);
-  if (!others.length) { el.style.display = 'none'; el.textContent = ''; return; }
-  el.style.display = ''; el.innerHTML = icon('users','sm') + ' ' + escapeHtml(others.join(', '));
+  if (!others.length && (state.editDevices || 0) <= 1) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = '';
+  el.innerHTML = icon('users','sm') + ' ' + (others.length
+    ? escapeHtml(others.join(', '))
+    : escapeHtml('вы (' + state.editDevices + ' устройства)'));
 }
 let previewTimer = null;
 area.addEventListener('input', () => {
@@ -1960,7 +1982,7 @@ area.addEventListener('input', () => {
 });
 async function sendEditorChange() {
   if (!state.editingFile) return;
-  try { await fetch('/api/edit/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: state.editingFile, content: area.value, projectId: state.projectId }) }); } catch {}
+  try { await fetch('/api/edit/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: state.editingFile, content: area.value, projectId: state.projectId, clientId: getEditClientId() }) }); } catch {}
 }
 document.getElementById('previewToggle').onclick = () => {
   state.editorPreviewVisible = !state.editorPreviewVisible;
@@ -2075,9 +2097,9 @@ document.getElementById('cancelBtn').onclick = async () => {
 document.getElementById('saveBtn').onclick = async () => {
   if (!state.editingFile) return;
   const file = state.editingFile; const content = area.value;
-  const r = await fetch('/api/edit/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, content, projectId: state.projectId }) });
+  const r = await fetch('/api/edit/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, content, projectId: state.projectId, clientId: getEditClientId() }) });
   if (!r.ok) { let d; try { d = await r.json(); } catch {} return dlA('Ошибка сохранения: ' + ((d && d.error) || r.statusText)); }
-  state.editingFile = null; state.editUsers = [];
+  state.editingFile = null; state.editUsers = []; state.editDevices = 0;
   updateEditorUsersUI(); modal.style.display = 'none';
   await loadTree();
   if (state.currentFile === file) await openFile(file);
@@ -3179,7 +3201,7 @@ function initProfile() {
 /* Utilities */
 window.addEventListener('beforeunload', () => {
   if (!state.editingFile) return;
-  try { fetch('/api/edit/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: state.editingFile, projectId: state.projectId }), keepalive: true }); } catch {}
+  try { fetch('/api/edit/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: state.editingFile, projectId: state.projectId, clientId: getEditClientId() }), keepalive: true }); } catch {}
 });
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -3836,13 +3858,13 @@ async function openEditorForInline(file) {
   try {
     const r = await fetch('/api/edit/join', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file, projectId: state.projectId })
+      body: JSON.stringify({ file, projectId: state.projectId, clientId: getEditClientId() })
     });
     if (!r.ok) {
       let d; try { d = await r.json(); } catch {}
       return dlA('Не удалось открыть: ' + ((d && d.error) || r.statusText));
     }
-    const { content, users } = await r.json();
+    const { content, users, devices } = await r.json();
     const ed = document.getElementById('inlineEditor');
     const areaEl = document.getElementById('inlineArea');
     // [FIX] Если есть черновик — используем его
@@ -3855,6 +3877,7 @@ async function openEditorForInline(file) {
     document.getElementById('content').style.display = 'none';
     state.inlineEditFile = file;
     state.editUsers = users || [];
+    state.editDevices = devices || (users || []).length;
     // Пока идёт редактирование, повторная кнопка «Ред.» не нужна и опасна.
     if (editBtn) editBtn.style.display = 'none';
     if (areaEl._resetInfPad) areaEl._resetInfPad();
@@ -3894,14 +3917,14 @@ async function saveInlineEditor() {
   const areaEl = document.getElementById('inlineArea');
   const content = areaEl.value;
   try {
-    const r = await fetch('/api/edit/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, content, projectId: state.projectId }) });
+    const r = await fetch('/api/edit/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, content, projectId: state.projectId, clientId: getEditClientId() }) });
     if (!r.ok) { const d = await r.json().catch(() => ({})); return dlA('Ошибка сохранения: ' + (d.error || r.statusText)); }
     // Черновик удаляем только после успешного сохранения.
     delete state.drafts[key];
     delete state.openEditors[key];
     _persistDrafts();
     state.inlineEditFile = null;
-    state.editUsers = [];
+    state.editUsers = []; state.editDevices = 0;
     updateInlineEditUsersUI();
     document.getElementById('inlineEditor').style.display = 'none';
     document.getElementById('content').style.display = '';
@@ -3914,9 +3937,9 @@ async function saveInlineEditor() {
 async function leaveInlineEditorSilent() {
   const file = state.inlineEditFile; if (!file) return;
   const key = state.projectId + '::' + file;
-  try { await fetch('/api/edit/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, projectId: state.projectId }) }); } catch {}
+  try { await fetch('/api/edit/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, projectId: state.projectId, clientId: getEditClientId() }) }); } catch {}
   state.inlineEditFile = null;
-  state.editUsers = [];
+  state.editUsers = []; state.editDevices = 0;
   document.getElementById('inlineEditor').style.display = 'none';
   document.getElementById('content').style.display = '';
   removeInlineButtons();
@@ -3934,9 +3957,9 @@ async function leaveInlineEditor(confirmIt) {
   delete state.drafts[key];
   delete state.openEditors[key];
   _persistDrafts();
-  try { await fetch('/api/edit/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, projectId: state.projectId }) }); } catch {}
+  try { await fetch('/api/edit/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, projectId: state.projectId, clientId: getEditClientId() }) }); } catch {}
   state.inlineEditFile = null;
-  state.editUsers = [];
+  state.editUsers = []; state.editDevices = 0;
   document.getElementById('inlineEditor').style.display = 'none';
   document.getElementById('content').style.display = '';
   removeInlineButtons();
@@ -3958,7 +3981,7 @@ function initInlineEditor() {
     clearTimeout(areaEl._chT);
     areaEl._chT = setTimeout(async () => {
       if (!state.inlineEditFile) return;
-      try { await fetch('/api/edit/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: state.inlineEditFile, content: areaEl.value, projectId: state.projectId }) }); } catch {}
+      try { await fetch('/api/edit/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: state.inlineEditFile, content: areaEl.value, projectId: state.projectId, clientId: getEditClientId() }) }); } catch {}
     }, 250);
   });
   document.querySelectorAll('#inlineEditor .inline-editor-toolbar button[data-md]').forEach(b => b.onclick = () => inlineInsertMd(b.dataset.md));
@@ -4765,7 +4788,7 @@ function showSelMenu(x, y, text) {
       // Записываем содержимое
       await fetch('/api/edit/save', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file: d.path, content: text, projectId: state.projectId })
+        body: JSON.stringify({ file: d.path, content: text, projectId: state.projectId, clientId: getEditClientId() })
       }).catch(()=>{});
       if (dir) state.expanded.add(dir);
       await loadTree();

@@ -2406,6 +2406,9 @@ app.post('/api/reports/:id/resolve', requireRole('admin'), (req, res) => {
 
 /* ---------- Совместное редактирование ---------- */
 function editKey(projectId, file) { return projectId + '::' + file; }
+function editSessionUsernames(s) {
+  return [...new Set([...s.users.values()].map(u => (u && u.username) || u).filter(Boolean))];
+}
 
 function getOrCreateSession(key, project, file) {
   let s = editSessions.get(key);
@@ -2442,10 +2445,12 @@ app.post('/api/edit/join', requireAuth, projectGuard('edit', 'body'), (req, res)
   if (!fs.existsSync(full)) return res.status(404).json({ error: 'not found' });
   const key = editKey(req.project.id, file);
   const s = getOrCreateSession(key, req.project, file);
-  s.users.set(req.user.username, { joinedAt: Date.now() });
-  const usersList = [...s.users.keys()];
-  sseSendTo(usersList, 'edit-users', { key, projectId: req.project.id, file, users: usersList });
-  res.json({ baseline: s.baseline, content: s.content, users: usersList });
+  // clientId различает вкладки/устройства одного и того же пользователя.
+  const clientId = String(req.body?.clientId || req.user.username).slice(0, 80);
+  s.users.set(clientId, { username: req.user.username, joinedAt: Date.now() });
+  const usersList = editSessionUsernames(s);
+  sseSendTo(usersList, 'edit-users', { key, projectId: req.project.id, file, users: usersList, devices: s.users.size });
+  res.json({ baseline: s.baseline, content: s.content, users: usersList, devices: s.users.size });
 });
 
 app.post('/api/edit/change', requireAuth, projectGuard('edit', 'body'), (req, res) => {
@@ -2459,9 +2464,10 @@ app.post('/api/edit/change', requireAuth, projectGuard('edit', 'body'), (req, re
   if (!s) return res.status(410).json({ error: 'session ended' });
   s.content = content;
   scheduleSessionSave(key);
-  // Только участники этой сессии, а не все SSE-клиенты сервера.
-  sseSendTo([...s.users.keys()], 'edit-change',
-    { key, projectId: req.project.id, file, content, from: req.user.username });
+  const clientId = String(req.body?.clientId || req.user.username).slice(0, 80);
+  // Только участники этой сессии; оба устройства одного пользователя получат событие.
+  sseSendTo(editSessionUsernames(s), 'edit-change',
+    { key, projectId: req.project.id, file, content, from: req.user.username, fromClientId: clientId });
   res.json({ ok: true });
 });
 
@@ -2481,9 +2487,11 @@ app.post('/api/edit/save', requireAuth, projectGuard('edit', 'body'), (req, res)
   fs.writeFileSync(full, content, 'utf8');
   logChange({ user: req.user.username, action: 'edit', file, before, after: content, projectId: req.project.id });
   try { refreshEmbedIndex(req.project.id, file, full); } catch {}
-  s.users.delete(req.user.username);
-  const usersList = [...s.users.keys()];
-  sseSendTo(usersList, 'edit-users', { key, projectId: req.project.id, file, users: usersList });
+  const clientId = String(req.body?.clientId || req.user.username).slice(0, 80);
+  if (s.users.has(clientId)) s.users.delete(clientId);
+  else s.users.delete(req.user.username);
+  const usersList = editSessionUsernames(s);
+  sseSendTo(usersList, 'edit-users', { key, projectId: req.project.id, file, users: usersList, devices: s.users.size });
   sseSendTo(usersList, 'edit-saved', { key, projectId: req.project.id, file, by: req.user.username });
   if (s.users.size === 0) editSessions.delete(key);
   res.json({ ok: true });
@@ -2495,15 +2503,17 @@ app.post('/api/edit/leave', requireAuth, projectGuard('edit', 'body'), (req, res
   const key = editKey(projectId, file);
   const s = editSessions.get(key);
   if (!s) return res.json({ ok: true });
-  s.users.delete(req.user.username);
+  const clientId = String(req.body?.clientId || req.user.username).slice(0, 80);
+  if (s.users.has(clientId)) s.users.delete(clientId);
+  else s.users.delete(req.user.username);
   if (s.users.size === 0) {
     // Сохраняем то, что пользователь набрал (а не baseline): иначе закрытие
     // вкладки/обрыв сети молча откатывали уже автосохранённый текст.
     flushEditSession(key, s);
     editSessions.delete(key);
   } else {
-    const usersList = [...s.users.keys()];
-    sseSendTo(usersList, 'edit-users', { key, projectId, file, users: usersList });
+    const usersList = editSessionUsernames(s);
+    sseSendTo(usersList, 'edit-users', { key, projectId, file, users: usersList, devices: s.users.size });
   }
   res.json({ ok: true });
 });
