@@ -3753,28 +3753,19 @@ function getUserChats(username) {
 }
 
 app.get('/api/darcus/chats', requireAuth, (req, res) => {
-  const d = loadDarcusChats();
-  const all = d.chats[req.user.username] || [];
-  // Пустые дубли «Новый чат» не нужны в списке (один пустой оставляем).
-  const nonEmpty = all.filter(c => (c.messages || []).length);
-  const list = nonEmpty.length ? nonEmpty : all;
-  if (nonEmpty.length && nonEmpty.length !== all.length) {
-    d.chats[req.user.username] = nonEmpty;
-    saveDarcusChats(d);
-  }
-  const out = list.map(c => ({
+  const list = getUserChats(req.user.username).map(c => ({
     id: c.id, title: c.title,
     createdAt: c.createdAt, updatedAt: c.updatedAt,
     messagesCount: (c.messages || []).length,
   })).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  res.json({ chats: out });
+  res.json({ chats: list });
 });
 
 app.post('/api/darcus/chats', requireAuth, (req, res) => {
   const d = loadDarcusChats();
   if (!d.chats[req.user.username]) d.chats[req.user.username] = [];
   const list = d.chats[req.user.username];
-  // Не плодим пустые «Новый чат»: если уже есть пустой — открываем его.
+  // Не плодим пустые «Новый чат»: если уже есть пустой — возвращаем его.
   const empty = list.find(c => !(c.messages || []).length);
   if (empty) return res.json({ chat: empty, reused: true });
   const chat = {

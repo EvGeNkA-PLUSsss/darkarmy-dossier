@@ -1019,19 +1019,16 @@ const QUALITY_PROMPT = `
 - Не выдумывай факты; если данных нет — честно скажи и предложи, что проверить.
 - Соблюдай Markdown: заголовки, списки, таблицы только когда это реально улучшает читаемость.`;
 
-const SUGGEST_PROMPT = `
+const FILE_PROMPT = `
 
-=== ПРЕДЛОЖЕНИЯ ДАЛЬНЕЙШИХ ШАГОВ ===
-В самом конце ответа добавь ровно один блок (и ничего после него):
-<<<SUGGESTIONS>>>
-["короткий следующий вопрос или команда 1","вариант 2","вариант 3"]
-<<<END SUGGESTIONS>>>
-Правила:
-- 2–4 варианта на русском, каждый до 80 символов;
-- это должны быть полезные следующие шаги именно по текущему ответу/файлу,
-  например «Продолжить реферат», «Сократить до 1 страницы», «Добавь примеры»;
-- не повторяй вопрос пользователя и не пиши общие фразы вроде «Чем помочь?»;
-- сам блок не упоминай в тексте и не оборачивай в тройные кавычки.`;
+=== СОЗДАВАЙ ФАЙЛЫ, А НЕ ТЕКСТ В ЧАТЕ ===
+Если пользователь просит реферат, статью, документ, план, инструкцию, большой
+список, код или другой объёмный текст — ты ОБЯЗАН создать/изменить файл через
+ACTION-блок с ПОЛНЫМ содержимым. В обычном тексте ответа напиши только короткое
+подтверждение (1–2 предложения) и путь к файлу. НЕ дублируй содержимое файла в
+чате. Поле path всегда указывай ОТНОСИТЕЛЬНО КОРНЯ текущего проекта, без имени
+проекта и без папки проекта. Если пользователь просит показать/объяснить/обсудить —
+можно ответить текстом без ACTION.`;
 
 async function darcusAsk({ user, projects, projectId, history, query, attachments, editingFile, stylePreset, voiceMode, onChunk, onRequest }) {
   const cfg = loadAiConfig();
@@ -1091,7 +1088,7 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
   const preset = (cfg.stylePresets && stylePreset) ? cfg.stylePresets[stylePreset] : null;
   let sysPrompt = applySubs(cfg.prompts.system, subs);
   if (preset && preset.systemSuffix) sysPrompt += preset.systemSuffix;
-  sysPrompt += QUALITY_PROMPT + SUGGEST_PROMPT;
+  sysPrompt += QUALITY_PROMPT + FILE_PROMPT;
   if (voiceMode) {
     sysPrompt += '\n\n=== ГОЛОСОВОЙ РЕЖИМ ===\n' +
       'Ответ будет озвучен вслух. Отвечай КРАТКО: 1–3 предложения, простой разговорный текст. ' +
@@ -1132,7 +1129,7 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
       // Компактный контекст: qwen2.5vl теряет изображение при длинном промпте.
       context: contextTrimmed.slice(0, 900), history: historyTrimmed.slice(0, 600),
     }) + (voiceMode ? '\n\nГОЛОСОВОЙ РЕЖИМ: ответ озвучивается — отвечай кратко, 1–3 предложениями, без списков и Markdown.' : '')
-      + SUGGEST_PROMPT;
+      + FILE_PROMPT;
     messages = [{ role: 'user', content: visionPrompt, images: imageParts }];
     modelOpts = { model: visionModel, temperature: 0.2 };
   } else {

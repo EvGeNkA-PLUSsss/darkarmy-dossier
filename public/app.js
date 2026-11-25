@@ -3305,6 +3305,21 @@ function initDarcus() {
   if (autoSendBtn) { updateDarcusVoiceAutoSendBtn(); autoSendBtn.onclick = () => { setDarcusVoiceAutoSend(!darcusVoiceAutoSendOn()); }; }
   const ctxNewBtn = document.getElementById('darcusContextNewChat');
   if (ctxNewBtn) ctxNewBtn.onclick = () => createDarcusChat();
+  const msgsBox = document.getElementById('darcusMessages');
+  const scrollBottomBtn = document.getElementById('darcusScrollBottom');
+  if (msgsBox && scrollBottomBtn) {
+    const updateScrollBtn = () => {
+      const gap = msgsBox.scrollHeight - msgsBox.scrollTop - msgsBox.clientHeight;
+      scrollBottomBtn.style.display = gap > 140 ? '' : 'none';
+    };
+    state._darcusScrollUpdate = updateScrollBtn;
+    msgsBox.addEventListener('scroll', updateScrollBtn, { passive: true });
+    scrollBottomBtn.onclick = () => {
+      msgsBox.scrollTo({ top: msgsBox.scrollHeight, behavior: 'smooth' });
+      setTimeout(updateScrollBtn, 400);
+    };
+    updateScrollBtn();
+  }
 
   // Клик по «✅ Darcus создал файл: <файл>» открывает этот файл в Dossier.
   if (!document._darcusActionLinkBound) {
@@ -3574,6 +3589,7 @@ function renderDarcusMessages() {
   }
   if (!shown) box.innerHTML = '<div class="chat-empty">Пустой ответ. Задайте вопрос ещё раз.</div>';
   box.scrollTop = box.scrollHeight;
+  if (typeof state._darcusScrollUpdate === 'function') state._darcusScrollUpdate();
 }
 function buildDarcusMsgEl(m) {
   const el = document.createElement('div');
@@ -3599,9 +3615,7 @@ function buildDarcusMsgEl(m) {
     }
     return el;
   }
-  const parsedAnswer = extractSuggestions(m.content || '');
-  const stripped = stripSuggestions(stripAiActions(parsedAnswer.text));
-  const suggestions = parsedAnswer.suggestions;
+  const stripped = visibleDarcusText(m.content || '');
   const isEmpty = !stripped.trim();
   // [FIX] Пока текста нет — показываем лёгкий плейсхолдер вместо пустоты
   const html = isEmpty
@@ -3615,10 +3629,7 @@ function buildDarcusMsgEl(m) {
     for (const w of (m.wiki || []).slice(0, 2)) parts.push(`<a href="${escapeHtml(w.url)}" target="_blank" rel="noopener">${icon('book','sm')} ${escapeHtml(w.title)}</a>`);
     sources = `<div class="darcus-sources">${parts.join(' · ')}</div>`;
   }
-  const suggestionsHtml = suggestions.length
-    ? `<div class="darcus-suggestions">${suggestions.map(s => `<button type="button" data-suggestion="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}</div>`
-    : '';
-  el.innerHTML = `<div class="bubble"><div class="md-body">${html}</div>${sources}${suggestionsHtml}<div class="msg-actions">
+  el.innerHTML = `<div class="bubble"><div class="md-body">${html}</div>${sources}<div class="msg-actions">
     <button type="button" class="msg-copy-btn" title="Скопировать ответ">${icon('copy','sm')}</button>
     <button type="button" class="msg-tts-btn" title="Озвучить"><svg class="ico sm"><use href="#i-volume"/></svg></button>
   </div></div>`;
@@ -3636,19 +3647,6 @@ function buildDarcusMsgEl(m) {
       () => showToast('Не удалось скопировать')
     );
   };
-  el.querySelectorAll('[data-suggestion]').forEach(btn => {
-    btn.onclick = ev => {
-      ev.stopPropagation();
-      if (state.darcus.streaming) return;
-      const input = document.getElementById('darcusInput');
-      const form = document.getElementById('darcusForm');
-      if (!input || !form) return;
-      input.value = btn.dataset.suggestion || '';
-      input.dispatchEvent(new Event('input'));
-      try { autoGrowResize(input); } catch {}
-      form.requestSubmit();
-    };
-  });
   const ttsBtn = el.querySelector('.msg-tts-btn');
   if (ttsBtn) ttsBtn.onclick = ev => {
     ev.stopPropagation();
