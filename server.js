@@ -624,6 +624,10 @@ const rateLimitUpload    = makeRateLimiter(60 * 1000, 30, 'Слишком мно
 app.use(require('./src/routes/history')({ storage, requireAuth, projectGuard }));
 /* ---------- Центр уведомлений (src/routes/notifications.js) ---------- */
 app.use(require('./src/routes/notifications')({ storage, requireAuth }));
+/* ---------- Баг-репорты (src/routes/bugs.js) ---------- */
+app.use(require('./src/routes/bugs')({
+  storage, requireAuth, requireSelfAdmin, logger, paths: { dataDir: DATA_DIR },
+}));
 
 /* ---------- SSRF-защита ---------- */
 // [SEC] Валидация URL Ollama. Блокирует metadata-сервисы и private ranges в проде.
@@ -1828,13 +1832,34 @@ function listRecursive(dir) {
   return out;
 }
 
+/* Перемещение файла/папки, в т.ч. между разными проектами (разными дисками). */
+function moveFsSync(src, dst) {
+  try { fs.renameSync(src, dst); }
+  catch (e) {
+    if (!['EXDEV', 'EPERM', 'EACCES', 'ENOTSUP'].includes(e.code)) throw e;
+    fs.cpSync(src, dst, { recursive: true, force: false, errorOnExist: true });
+    fs.rmSync(src, { recursive: true, force: true });
+  }
+}
+
 app.post('/api/move', requireAuth, projectGuard('edit', 'body'), (req, res) => {
-  const { from, to } = req.body || {};
+  const { from, to, targetProjectId } = req.body || {};
   if (!from || !to) return res.status(400).json({ error: 'bad input' });
+  if (!String(from).trim()) return res.status(400).json({ error: 'Нельзя переместить корень проекта' });
+  let targetProject = req.project;
+  let targetRoot = req.projectRoot;
+  if (targetProjectId && targetProjectId !== req.project.id) {
+    targetProject = loadProjects().projects.find(p => p.id === targetProjectId);
+    if (!targetProject) return res.status(404).json({ error: 'project not found' });
+    if (!canEditProject(req.user, targetProject)) return res.status(403).json({ error: 'forbidden' });
+    targetRoot = projectFolder(targetProject);
+    if (!fs.existsSync(targetRoot)) return res.status(404).json({ error: 'target project folder not found' });
+  }
   let fromFull, toFull;
-  try { fromFull = safeJoin(req.projectRoot, from); toFull = safeJoin(req.projectRoot, to); }
+  try { fromFull = safeJoin(req.projectRoot, from); toFull = safeJoin(targetRoot, to); }
   catch { return res.status(403).json({ error: 'forbidden' }); }
   if (!fs.existsSync(fromFull)) return res.status(404).json({ error: 'not found' });
+  if (fromFull === req.projectRoot) return res.status(400).json({ error: 'Нельзя переместить корень проекта' });
   if (toFull.startsWith(fromFull + path.sep) || toFull === fromFull)
     return res.status(400).json({ error: 'invalid target' });
   const toDir = path.dirname(toFull);
@@ -1846,14 +1871,24 @@ app.post('/api/move', requireAuth, projectGuard('edit', 'body'), (req, res) => {
     let i = 1;
     while (fs.existsSync(finalTo)) { finalTo = path.join(toDir, `${base} (${i})${ext}`); i++; }
   }
-  fs.renameSync(fromFull, finalTo);
+  try { moveFsSync(fromFull, finalTo); }
+  catch (e) { return res.status(500).json({ error: 'Не удалось переместить: ' + e.message }); }
   const relFrom = path.relative(req.projectRoot, fromFull).split(path.sep).join('/');
-  const relTo = path.relative(req.projectRoot, finalTo).split(path.sep).join('/');
-  // Старый путь протух — инвалидируем; по новому пути файл будет проиндексирован
-  // при следующем проходе (или вручную через /api/darcus/reindex).
+  const relTo = path.relative(targetRoot, finalTo).split(path.sep).join('/');
   try { darcus.invalidateFileCache(req.project.id, relFrom); } catch {}
-  logChange({ user: req.user.username, action: 'move', file: relTo, from: relFrom, projectId: req.project.id });
-  res.json({ ok: true, path: relTo });
+  if (targetProject.id !== req.project.id) {
+    try { darcus.invalidateFileCache(targetProject.id, relTo); } catch {}
+  }
+  logChange({
+    user: req.user.username, action: 'move', file: relTo, from: relFrom,
+    projectId: req.project.id,
+    details: targetProject.id !== req.project.id ? `в проект «${targetProject.name}»` : undefined,
+  });
+  res.json({
+    ok: true, path: relTo,
+    projectId: targetProject.id, projectName: targetProject.name,
+    movedToProject: targetProject.id !== req.project.id,
+  });
 });
 
 /* ---------- Upload ---------- */
@@ -3020,6 +3055,69 @@ function getAccessibleProjects(user) {
   return visible.map(p => ({ id: p.id, name: p.name, root: projectFolder(p), project: p }));
 }
 
+/* Изображения, на которые ссылается открытый Markdown-файл: Darcus должен их
+   «видеть», а не только читать путь. Возвращаем в формате вложений чата. */
+const REF_IMG_MIME = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  webp: 'image/webp', bmp: 'image/bmp',
+};
+function collectReferencedImages(project, editingFile, alreadyNames = []) {
+  const out = [];
+  const root = projectFolder(project);
+  let full;
+  try { full = safeJoin(root, editingFile); } catch { return out; }
+  if (!fs.existsSync(full) || !fs.statSync(full).isFile()) return out;
+  let text = '';
+  try { text = fs.readFileSync(full, 'utf8').slice(0, 200000); } catch { return out; }
+  const refs = new Set();
+  const add = (m) => { if (m && m[1]) refs.add(String(m[1]).trim()); };
+  for (const re of [
+    /!\[[^\]]*\]\(<?([^)\s>]+)>?(?:\s+"[^"]*")?\)/g,
+    /!\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g,
+    /<img[^>]+src=["']([^"']+)["']/gi,
+  ]) { let m; while ((m = re.exec(text)) && refs.size < 12) add(m); }
+  const seenNames = new Set(alreadyNames.map(n => String(n).toLowerCase()));
+  const seenPaths = new Set();
+  const baseDir = path.posix.dirname(String(editingFile).replace(/\\/g, '/'));
+  for (let ref of refs) {
+    if (/^(https?:|data:|mailto:|tel:)/i.test(ref)) continue;
+    try { ref = decodeURIComponent(ref.split(/[?#]/)[0]); } catch {}
+    if (ref.startsWith('/files/')) {
+      const parts = ref.split('/').filter(Boolean); // files, projectId, ...path
+      ref = parts.slice(2).join('/');
+    }
+    ref = ref.replace(/^\/+/, '');
+    if (!ref || ref.includes('..') || ref.includes('\0')) continue;
+    const candidates = [];
+    if (baseDir && baseDir !== '.') candidates.push(baseDir + '/' + ref);
+    candidates.push(ref);
+    for (const rel of candidates) {
+      let abs;
+      try { abs = safeJoin(root, rel); } catch { continue; }
+      let st;
+      try { st = fs.statSync(abs); } catch { continue; }
+      if (!st.isFile()) continue;
+      const ext = (rel.split('.').pop() || '').toLowerCase();
+      const mime = REF_IMG_MIME[ext];
+      if (!mime) continue;
+      if (st.size > 8 * 1024 * 1024) continue;
+      if (seenPaths.has(abs)) break;
+      const name = path.basename(abs);
+      if (seenNames.has(name.toLowerCase())) break;
+      seenPaths.add(abs); seenNames.add(name.toLowerCase());
+      try {
+        out.push({
+          name, kind: 'image', mime, size: st.size,
+          data: fs.readFileSync(abs).toString('base64'), thumb: null,
+        });
+      } catch {}
+      break;
+    }
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
 app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, async (req, res) => {
   const { query, history, projectId, chatId, attachments, editingFile, stylePreset } = req.body || {};
 
@@ -3070,6 +3168,21 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
   res.write(`retry: 3000\n\n`);
 
   const projects = getAccessibleProjects(req.user);
+
+  // Если в открытом Markdown есть ссылки на картинки — подмешиваем их Darcus.
+  if (editingFile && projectId) {
+    try {
+      const p = projects.find(x => x.id === projectId);
+      if (p) {
+        const existing = safeAtts.filter(a => a.kind === 'image').map(a => a.name);
+        const extra = collectReferencedImages(p, editingFile, existing);
+        if (extra.length) {
+          safeAtts = safeAtts.concat(extra);
+          logger.info({ file: editingFile, images: extra.map(a => a.name) }, 'darcus: referenced images attached');
+        }
+      }
+    } catch (e) { logger.warn({ err: e.message }, 'darcus: referenced images failed'); }
+  }
 
   // Если клиент закрыл вкладку/оборвал соединение — останавливаем генерацию,
   // чтобы Ollama не держала GPU и сокет бесконечно.

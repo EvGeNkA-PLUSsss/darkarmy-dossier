@@ -446,8 +446,7 @@ test('канбан задач: статусы, порядок, исполнит�
   assert.equal(typeof found.order, 'number');
 });
 
-test('экспорт/импорт: только админ, проверка формата и подтверждения', async () => {
-  const member = makeClient();
+test('экспорт/импорт: только админ, проверка формата и подтверждения', async () => {  const member = makeClient();
   await member.login('member2', 'MemberTest123!');
   assert.equal((await member.request('/api/admin/export')).status, 403);
 
@@ -495,4 +494,73 @@ test('экспорт/импорт: только админ, проверка ф�
   const me = await admin.json('/api/me');
   assert.equal(me.res.status, 200);
   assert.equal(me.body.user.username, 'admin');
+});
+
+test('баг-репорт: пользователь отправляет скриншот, админ видит и удаляет', async () => {
+  const member = makeClient();
+  await member.login('member1', 'MemberTest123!');
+  const png = 'data:image/png;base64,' + Buffer.from('89504e470d0a1a0a', 'hex').toString('base64');
+  const created = await member.json('/api/bugs', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description: 'Кнопка съехала при 390px', page: '/index.html', screenshot: png }),
+  });
+  assert.equal(created.res.status, 200, JSON.stringify(created.body));
+  assert.ok(created.body.id);
+
+  // обычный пользователь не читает список багов
+  assert.equal((await member.request('/api/bugs')).status, 403);
+  assert.equal((await member.request('/api/bugs/' + created.body.id + '/screenshot')).status, 403);
+
+  const list = await admin.json('/api/bugs');
+  assert.equal(list.res.status, 200);
+  const item = list.body.items.find(i => i.id === created.body.id);
+  assert.ok(item, 'баг должен быть в списке админа');
+  assert.equal(item.user, 'member1');
+  assert.equal(item.hasScreenshot, true);
+
+  const shot = await admin.request(item.screenshotUrl);
+  assert.equal(shot.status, 200);
+  assert.match(shot.headers.get('content-type') || '', /^image\/png/);
+
+  const del = await admin.json('/api/bugs/' + created.body.id, { method: 'DELETE' });
+  assert.equal(del.res.status, 200);
+  const after = await admin.json('/api/bugs');
+  assert.ok(!after.body.items.some(i => i.id === created.body.id));
+});
+
+test('перемещение файла в другой проект: права, файл переезжает', async () => {
+  const proj = await admin.json('/api/projects', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Проект для перемещения' }),
+  });
+  assert.equal(proj.res.status, 200, JSON.stringify(proj.body));
+  const targetId = proj.body.project.id;
+
+  const fd = new FormData();
+  fd.append('file', new Blob(['move me between projects'], { type: 'text/plain' }), 'move-me.txt');
+  fd.append('projectId', 'default');
+  const up = await admin.json('/api/upload', { method: 'POST', body: fd });
+  assert.equal(up.res.status, 200, JSON.stringify(up.body));
+
+  // участник default не может писать в чужой проект
+  const member = makeClient();
+  await member.login('member1', 'MemberTest123!');
+  const denied = await member.json('/api/move', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: up.body.path, to: 'move-me.txt', projectId: 'default', targetProjectId: targetId }),
+  });
+  assert.equal(denied.res.status, 403);
+
+  const moved = await admin.json('/api/move', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: up.body.path, to: 'move-me.txt', projectId: 'default', targetProjectId: targetId }),
+  });
+  assert.equal(moved.res.status, 200, JSON.stringify(moved.body));
+  assert.equal(moved.body.movedToProject, true);
+  assert.equal(moved.body.projectId, targetId);
+
+  const targetTree = await admin.json('/api/tree?projectId=' + targetId);
+  assert.ok(targetTree.body.tree.some(n => n.path === 'move-me.txt'));
+  const sourceTree = await admin.json('/api/tree?projectId=default');
+  assert.ok(!sourceTree.body.tree.some(n => n.path === up.body.path));
 });

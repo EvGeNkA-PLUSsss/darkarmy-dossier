@@ -458,8 +458,7 @@ async function switchProject(id) {
   state.projectId = id;
   localStorage.setItem('lastProject', id);
   const r = await fetch('/api/projects/' + id);
-  if (!r.ok) { renderEmptyProjects(); return; }
-  const { project } = await r.json();
+  if (!r.ok) { renderEmptyProjects(); return; }  const { project } = await r.json();
   state.currentProject = project;
   state.currentFile = null; state.expanded = new Set();
   resetViewer();
@@ -478,6 +477,7 @@ async function switchProject(id) {
   const ib = document.getElementById('inboxBtn');
   if (ib) ib.style.display = state.user.role === 'admin' ? '' : 'none';
   if (state.chatTab === 'project') await loadProjectChat();
+  updateDarcusGenAvailability();
 
   // [FIX] Восстанавливаем последний открытый файл этого проекта
   const lastFile = state.lastFileByProject[id];
@@ -492,6 +492,16 @@ function renderEmptyProjects() {
   const nameEl = document.getElementById('projectDropdownName');
   if (nameEl) nameEl.textContent = '—';
   state.projectId = null; state.currentProject = null;
+  updateDarcusGenAvailability();
+}
+// «Darcus — создать» доступна только при выбранном проекте.
+function updateDarcusGenAvailability() {
+  const btn = document.getElementById('darcusGenBtn');
+  if (!btn) return;
+  const has = !!state.projectId;
+  btn.style.display = has ? '' : 'none';
+  btn.disabled = !has;
+  if (btn.title !== undefined) btn.title = has ? 'Создать документ через Darcus' : 'Сначала выберите проект';
 }
 function updateProjectMenuAvailability() {
   const b = document.getElementById('projectMenuBtn'); if (b) b.disabled = !state.currentProject;
@@ -640,8 +650,12 @@ async function updateUploadLabel() {
   try {
     const s = await (await fetch('/api/settings')).json();
     if (state.user.role === 'admin') uploadBtn.innerHTML = `${icon('upload','sm')} Загрузить`;
-    else if (s.uploadLimitMB) uploadBtn.innerHTML = `${icon('upload','sm')} Загрузить ≤ ${s.uploadLimitMB} МБ`;
+    else if (s.uploadLimitMB) uploadBtn.innerHTML = `${icon('upload','sm')} Загрузить`;
     else uploadBtn.innerHTML = `${icon('upload','sm')} Загрузить`;
+    // Лимит — в подсказке, чтобы длинная подпись не обрезалась в узком сайдбаре.
+    uploadBtn.title = (state.user.role !== 'admin' && s.uploadLimitMB)
+      ? `Загрузить файл с компьютера (до ${s.uploadLimitMB} МБ)`
+      : 'Загрузить файл с компьютера';
   } catch {}
 }
 
@@ -795,6 +809,25 @@ function renderTree() {
   rootRow.innerHTML = `<span class="arrow"></span><span class="icon">${icon('home','sm')}</span><span class="name">Корень: ${escapeHtml(pname)}</span>`;
   rootRow.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); showCtxMenu(e.pageX, e.pageY, { name: 'Корень', path: '', isDir: true }, 'root'); };
   listEl.appendChild(rootRow);
+  if (!state.tree.length) {
+    const empty = document.createElement('div');
+    empty.className = 'tree-empty';
+    empty.innerHTML = `<div class="tree-empty-icon">${icon('folder','sm')}</div>
+      <div class="tree-empty-title">Проект пуст</div>
+      <div class="tree-empty-hint">Перетащите файлы сюда<br>или создайте первый файл</div>
+      <button type="button" class="tree-empty-btn">${icon('plus','sm')} Создать файл</button>`;
+    const goCreate = () => { const b = document.getElementById('newFileBtn'); if (b) b.click(); };
+    empty.querySelector('.tree-empty-btn').onclick = goCreate;
+    empty.addEventListener('dragover', e => { e.preventDefault(); empty.classList.add('drag-over'); });
+    empty.addEventListener('dragleave', () => empty.classList.remove('drag-over'));
+    empty.addEventListener('drop', async e => {
+      e.preventDefault(); empty.classList.remove('drag-over');
+      const files = [...(e.dataTransfer?.files || [])];
+      if (files.length) await uploadFilesToRoot(files);
+    });
+    listEl.appendChild(empty);
+    return;
+  }
   renderNodes(state.tree, listEl, 0);
 }
 function canEditCurrentProject() {
@@ -1039,10 +1072,24 @@ function initPasteUploads() {
 }
 
 /* Move modal */
-const moveState = { source: null, target: null, expanded: new Set() };
+const moveState = { source: null, target: null, expanded: new Set(), targetProjectId: null, tree: null };
+function editableProjects() {
+  return (state.projects || []).filter(p =>
+    state.user.role === 'admin' || p.myRole === 'creator' || p.myRole === 'editor');
+}
 function openMoveModal(node) {
   moveState.source = node; moveState.target = null; moveState.expanded = new Set();
-  for (const n of state.tree) if (n.isDir) moveState.expanded.add(n.path);
+  moveState.targetProjectId = state.projectId;
+  moveState.tree = state.tree;
+  const sel = document.getElementById('moveProjectSelect');
+  if (sel) {
+    const projects = editableProjects();
+    sel.innerHTML = projects.map(p =>
+      `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}${p.id === state.projectId ? ' (текущий)' : ''}</option>`
+    ).join('') || `<option value="${escapeHtml(state.projectId)}">${escapeHtml(state.currentProject ? state.currentProject.name : '—')}</option>`;
+    sel.value = state.projectId;
+  }
+  for (const n of (moveState.tree || [])) if (n.isDir) moveState.expanded.add(n.path);
   document.getElementById('moveSource').textContent = `Перемещаем: ${node.path || '(корень)'}`;
   renderMoveTree();
   document.getElementById('moveConfirmBtn').disabled = true;
@@ -1059,9 +1106,11 @@ function filterForMove(nodes, exclude) {
 }
 function renderMoveTree() {
   const treeEl = document.getElementById('moveTree'); treeEl.innerHTML = '';
-  treeEl.appendChild(buildMoveRow({ name: 'Корень', path: '', isDir: true, children: [] }, 0, true));
-  const exclude = moveState.source?.path || '';
-  renderMoveNodes(filterForMove(state.tree, exclude), treeEl, 1);
+  const proj = (state.projects || []).find(p => p.id === moveState.targetProjectId);
+  const rootName = proj ? proj.name : 'Корень';
+  treeEl.appendChild(buildMoveRow({ name: rootName, path: '', isDir: true, children: [] }, 0, true));
+  const exclude = moveState.targetProjectId === state.projectId ? (moveState.source?.path || '') : '';
+  renderMoveNodes(filterForMove(moveState.tree || [], exclude), treeEl, 1);
 }
 function renderMoveNodes(nodes, container, depth) {
   for (const n of nodes) {
@@ -1088,14 +1137,35 @@ function initMove() {
   document.getElementById('moveCloseBtn').onclick =
   document.getElementById('moveCancelBtn').onclick = () => { modalEl.style.display = 'none'; moveState.source = null; };
   modalEl.addEventListener('click', e => { if (e.target === modalEl) { modalEl.style.display = 'none'; moveState.source = null; } });
+  const sel = document.getElementById('moveProjectSelect');
+  if (sel) sel.onchange = async () => {
+    moveState.targetProjectId = sel.value;
+    moveState.target = null;
+    document.getElementById('moveConfirmBtn').disabled = true;
+    if (sel.value === state.projectId) {
+      moveState.tree = state.tree;
+    } else {
+      document.getElementById('moveTree').innerHTML = '<p class="hint">Загрузка…</p>';
+      try {
+        const r = await fetch('/api/tree?projectId=' + encodeURIComponent(sel.value));
+        const d = await r.json().catch(() => ({}));
+        moveState.tree = r.ok ? (d.tree || []) : [];
+      } catch { moveState.tree = []; }
+    }
+    moveState.expanded = new Set();
+    for (const n of (moveState.tree || [])) if (n.isDir) moveState.expanded.add(n.path);
+    renderMoveTree();
+  };
   document.getElementById('moveConfirmBtn').onclick = async () => {
     if (!moveState.source || moveState.target === null) return;
     const src = moveState.source.path;
     const fname = src.split('/').pop();
     const to = moveState.target ? (moveState.target + '/' + fname) : fname;
-    if (to === src) return;
-    if (moveState.target === src || (moveState.target && moveState.target.startsWith(src + '/'))) return;
-    await moveItem(src, to);
+    if (to === src && moveState.targetProjectId === state.projectId) return;
+    if (moveState.targetProjectId === state.projectId &&
+        (moveState.target === src || (moveState.target && moveState.target.startsWith(src + '/')))) return;
+    const ok = await moveItem(src, to, moveState.targetProjectId);
+    if (!ok) return;
     modalEl.style.display = 'none'; moveState.source = null; moveState.target = null;
   };
 }
@@ -1291,15 +1361,23 @@ async function deleteNode(node) {
   if (state.currentFile === node.path) resetViewer();
   await loadTree();
 }
-async function moveItem(from, to) {
-  if (!from || !to || from === to) return;
+async function moveItem(from, to, targetProjectId) {
+  if (!from || !to || (from === to && (!targetProjectId || targetProjectId === state.projectId))) return false;
   try {
-    const r = await fetch('/api/move', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to, projectId: state.projectId }) });
+    const body = { from, to, projectId: state.projectId };
+    if (targetProjectId && targetProjectId !== state.projectId) body.targetProjectId = targetProjectId;
+    const r = await fetch('/api/move', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     let data; try { data = await r.json(); } catch { data = {}; }
-    if (!r.ok) { dlA('Не удалось переместить: ' + (data.error || r.statusText)); return; }
-    if (state.currentFile === from) state.currentFile = data.path;
+    if (!r.ok) { dlA('Не удалось переместить: ' + (data.error || r.statusText)); return false; }
+    if (data.movedToProject) {
+      showToast(`Перемещено в проект «${data.projectName}»`);
+      if (state.currentFile === from) resetViewer();
+    } else if (state.currentFile === from) {
+      state.currentFile = data.path;
+    }
     await loadTree();
-  } catch (e) { dlA('Ошибка сети: ' + e.message); }
+    return true;
+  } catch (e) { dlA('Ошибка сети: ' + e.message); return false; }
 }
 
 /* =========================================================
@@ -1583,9 +1661,44 @@ document.getElementById('previewToggle').onclick = () => {
   document.querySelector('.editor-body').classList.toggle('has-preview', state.editorPreviewVisible);
 };
 document.querySelectorAll('.editor-toolbar button[data-md]').forEach(b => b.onclick = () => insertMd(b.dataset.md));
+/* Вставка изображений/файлов в Markdown: выбор файла → загрузка в проект →
+   готовая Markdown-ссылка на /files/<project>/<path>. */
+function mdDirForFile() {
+  const f = state.inlineEditFile || state.editingFile || state.currentFile || '';
+  return f.includes('/') ? f.substring(0, f.lastIndexOf('/')) : '';
+}
+function pickFilesForMd(accept) {
+  return new Promise(resolve => {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.multiple = true;
+    if (accept) inp.accept = accept;
+    inp.onchange = () => resolve([...(inp.files || [])]);
+    inp.click();
+  });
+}
+async function uploadMdFiles(files) {
+  const dir = mdDirForFile();
+  const lines = [];
+  for (const f of files) {
+    const fd = new FormData();
+    fd.append('file', f); fd.append('dir', dir); fd.append('projectId', state.projectId);
+    let r, d = {};
+    try {
+      r = await fetch('/api/upload', { method: 'POST', body: fd });
+      d = await r.json().catch(() => ({}));
+    } catch (e) { showToast('Не удалось загрузить «' + f.name + '»: ' + e.message); continue; }
+    if (!r.ok) { showToast('Не удалось загрузить «' + f.name + '»: ' + (d.error || r.statusText)); continue; }
+    const url = '/files/' + encodeURIComponent(state.projectId) + '/' +
+      d.path.split('/').map(encodeURIComponent).join('/');
+    const isImg = (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(f.name);
+    lines.push(isImg ? `![${f.name}](${url})` : `[${f.name}](${url})`);
+  }
+  if (lines.length) { try { await loadTree(); } catch {} }
+  return lines.join('\n');
+}
+
 async function insertMd(type) {
-  const start = area.selectionStart, end = area.selectionEnd;
-  const val = area.value, sel = val.substring(start, end);
+  const start = area.selectionStart, end = area.selectionEnd;  const val = area.value, sel = val.substring(start, end);
   const before = val.substring(0, start), after = val.substring(end);
   let insert = '';
   const block = t => '\n\n' + t + '\n\n';
@@ -1601,7 +1714,20 @@ async function insertMd(type) {
     case 'ol': insert = block((sel || 'пункт').split('\n').map((l, i) => (i+1) + '. ' + l).join('\n')); break;
     case 'quote': insert = block((sel || 'цитата').split('\n').map(l => '> ' + l).join('\n')); break;
     case 'link': { const url = await dlP('URL:', 'https://', 'Ссылка'); if (!url) return; insert = `[${sel || 'текст'}](${url})`; break; }
-    case 'image': { const name = await dlP('Имя картинки:', 'image.png', 'Картинка'); if (!name || !name.trim()) return; insert = `![[${name.trim()}]]`; break; }
+    case 'image': {
+      const files = await pickFilesForMd('image/*');
+      if (!files.length) return;
+      const md = await uploadMdFiles(files);
+      insert = md ? '\n\n' + md + '\n\n' : '';
+      break;
+    }
+    case 'attach': {
+      const files = await pickFilesForMd();
+      if (!files.length) return;
+      const md = await uploadMdFiles(files);
+      insert = md ? '\n\n' + md + '\n\n' : '';
+      break;
+    }
     case 'hr': insert = '\n\n---\n\n'; break;
     case 'codeblock': insert = '\n\n```\n' + (sel || 'код') + '\n```\n\n'; break;
     case 'table': {
@@ -1755,6 +1881,21 @@ newFolderBtn.onclick = async () => {
   await loadTree();
 };
 uploadBtn.onclick = () => uploadInput.click();
+async function uploadFilesToRoot(files) {
+  if (!state.projectId) return;
+  let last = null;
+  for (const f of files) {
+    const fd = new FormData(); fd.append('file', f); fd.append('dir', ''); fd.append('projectId', state.projectId);
+    try {
+      const r = await fetch('/api/upload', { method: 'POST', body: fd });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { showToast(`«${f.name}»: ${d.error || r.statusText}`); continue; }
+      last = d.path;
+    } catch (e) { showToast(`«${f.name}»: ${e.message}`); }
+  }
+  await loadTree();
+  if (last) try { await openFile(last); } catch {}
+}
 uploadInput.onchange = async () => {
   const f = uploadInput.files[0]; if (!f) return;
   try {
@@ -3331,7 +3472,20 @@ async function inlineInsertMd(type) {
     case 'ol': ins = block((sel || 'пункт').split('\n').map((l,i)=>(i+1)+'. '+l).join('\n')); break;
     case 'quote': ins = block((sel || 'цитата').split('\n').map(l => '> ' + l).join('\n')); break;
     case 'link': { const u = await dlP('URL:', 'https://', 'Ссылка'); if (!u) return; ins = `[${sel||'текст'}](${u})`; break; }
-    case 'image': { const n = await dlP('Имя картинки:', 'image.png', 'Картинка'); if (!n) return; ins = `![[${n.trim()}]]`; break; }
+    case 'image': {
+      const files = await pickFilesForMd('image/*');
+      if (!files.length) return;
+      const md = await uploadMdFiles(files);
+      ins = md ? '\n\n' + md + '\n\n' : '';
+      break;
+    }
+    case 'attach': {
+      const files = await pickFilesForMd();
+      if (!files.length) return;
+      const md = await uploadMdFiles(files);
+      ins = md ? '\n\n' + md + '\n\n' : '';
+      break;
+    }
     case 'hr': ins = '\n\n---\n\n'; break;
     case 'codeblock': ins = '\n\n```\n' + (sel || 'код') + '\n```\n\n'; break;
     case 'table': {
@@ -3672,7 +3826,7 @@ function initProfileExt() {
       const has = state.subscription.active || state.subscription.forceAdmin;
       status.textContent = has ? (state.subscription.until ? 'активна до ' + new Date(state.subscription.until).toLocaleDateString('ru-RU') : 'активна') : 'нет';
       line.style.display = '';
-      actBox.style.display = has ? 'none' : '';
+      actBox.style.display = has ? 'none' : 'flex';
       adsChk.parentElement.style.display = (state.user?.role === 'admin') ? 'flex' : 'none';
     };
   }
@@ -3680,6 +3834,80 @@ function initProfileExt() {
     const code = (codeInp.value || '').trim();
     if (!code) return;
     if (await activateSubscription(code)) { status.textContent = 'активна'; actBox.style.display = 'none'; }
+  };
+}
+
+/* =========================================================
+   Кнопка «БАГ» — отправка баг-репорта со скриншотом
+   ========================================================= */
+function initBugReport() {
+  const btn = document.getElementById('bugBtn');
+  const modal = document.getElementById('bugModal');
+  const form = document.getElementById('bugForm');
+  if (!btn || !modal || !form) return;
+  const fileInput = document.getElementById('bugScreenshot');
+  const preview = document.getElementById('bugShotPreview');
+  const shotName = document.getElementById('bugShotName');
+  let screenshotData = null;
+
+  const resetShot = () => {
+    screenshotData = null;
+    if (preview) { preview.style.display = 'none'; preview.innerHTML = ''; }
+    if (fileInput) fileInput.value = '';
+    if (shotName) shotName.textContent = 'PNG/JPG/WEBP до 3 МБ, можно вставить из буфера (Ctrl+V)';
+  };
+  const readFile = (file) => new Promise((resolve, reject) => {
+    if (!file || !/^image\//.test(file.type)) return reject(new Error('Это не изображение'));
+    if (file.size > 3 * 1024 * 1024) return reject(new Error('Скриншот больше 3 МБ'));
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result));
+    fr.onerror = () => reject(new Error('Не удалось прочитать файл'));
+    fr.readAsDataURL(file);
+  });
+  const applyFile = async (file) => {
+    try {
+      screenshotData = await readFile(file);
+      if (preview) {
+        preview.style.display = '';
+        preview.innerHTML = `<img src="${screenshotData}" alt="Скриншот бага"><button type="button" id="bugShotRemove" title="Убрать">×</button>`;
+        const rm = document.getElementById('bugShotRemove');
+        if (rm) rm.onclick = resetShot;
+      }
+      if (shotName) shotName.textContent = file.name;
+    } catch (e) { dlA(e.message); }
+  };
+
+  btn.onclick = () => { form.reset(); resetShot(); modal.style.display = 'flex'; setTimeout(() => form.querySelector('textarea').focus(), 50); };
+  document.getElementById('bugCloseBtn').onclick =
+  document.getElementById('bugCancelBtn').onclick = () => { modal.style.display = 'none'; };
+  modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+  document.getElementById('bugAttachBtn').onclick = () => fileInput.click();
+  fileInput.onchange = () => { if (fileInput.files[0]) applyFile(fileInput.files[0]); };
+  form.addEventListener('paste', e => {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (const it of items) {
+      if (it.kind === 'file') { const f = it.getAsFile(); if (f) { e.preventDefault(); applyFile(f); break; } }
+    }
+  });
+  form.onsubmit = async e => {
+    e.preventDefault();
+    const description = String(form.description.value || '').trim();
+    if (description.length < 5) return dlA('Опишите баг (минимум 5 символов)');
+    const submit = form.querySelector('button[type=submit]');
+    const old = submit.textContent;
+    submit.disabled = true; submit.textContent = 'Отправка…';
+    try {
+      const r = await fetch('/api/bugs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description, page: location.pathname + location.search, screenshot: screenshotData }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || r.statusText);
+      modal.style.display = 'none';
+      showToast('Баг отправлен — спасибо!');
+    } catch (err) { dlA('Не удалось отправить баг: ' + err.message); }
+    finally { submit.disabled = false; submit.textContent = old; }
   };
 }
 
@@ -3692,6 +3920,7 @@ async function initExtensions() {
   initInlineEditor();
   initOcrToggle();
   initDarcusGen();
+  initBugReport();
   initProfileExt();
   initAds();
   // [FIX] Привязка кнопки «Кратко»
@@ -3711,7 +3940,7 @@ async function initExtensions() {
   const dt = document.querySelector('.chat-tab[data-tab="darcus"]');
   if (dt) dt.addEventListener('click', () => { setTimeout(refreshDarcusView, 20); });
 
-  const dgb = document.getElementById('darcusGenBtn'); if (dgb) dgb.style.display = '';
+  const dgb = document.getElementById('darcusGenBtn'); if (dgb) updateDarcusGenAvailability();
 
   // [FIX] AI-кнопки в модалке редактора (rephrase/shorten/fix) — отдельно,
   // и translate — отдельно, без вложенных forEach
@@ -4268,10 +4497,14 @@ async function runAiAction(act) {
   };
   const label = LBL[type] || `выполнить «${type}»`;
 
-  // Подтверждение пользователя
+  // Подтверждение пользователя (всегда, до записи на диск)
+  let preview = '';
+  if ((type === 'create' || type === 'edit') && content) {
+    preview = '\n\nСодержимое (начало):\n' + content.slice(0, 400) + (content.length > 400 ? '\n…' : '');
+  }
   const ok = await dlC(
-    `Darcus предлагает ${label}:\n\n${path}\n\nПрименить действие?`,
-    'Действие Darcus'
+    `Darcus предлагает ${label}:\n\n${path || from + ' → ' + to}${preview}\n\nПрименить действие?`,
+    'Действие Darcus — подтверждение'
   );
   if (!ok) return;
 
@@ -4500,7 +4733,7 @@ function stripAiActions(text) {
     const rest = s.slice(m.index + consumed);
     const em = rest.match(/<{2,3}\s*END\s*ACTION\s*>{2,3}/i);
     if (em) consumed += em.index + em[0].length;
-    out += `\n\n✅ *Darcus ${label}*${path ? ': `' + path + '`' : ''}\n\n`;
+    out += `\n\n<div class="darcus-action-done">✅ <b>Darcus ${label}</b>${path ? ': <code>' + escapeHtml(path) + '</code>' : ''}</div>\n\n`;
     last = m.index + consumed;
     markerRe.lastIndex = last;
   }

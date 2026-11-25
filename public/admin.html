@@ -24,6 +24,7 @@
 <symbol id="i-volume-x" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M23 9l-6 6M17 9l6 6"/></symbol>
 <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
 <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+<symbol id="i-warning" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></symbol>
 <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></symbol>
 <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
@@ -74,6 +75,7 @@
   <button class="tab" data-tab="ads" id="adsTab" style="display:none"><svg class="ico sm"><use href="#i-monitor"/></svg> Реклама</button>
   <button class="tab" data-tab="subs" id="subsTab" style="display:none"><svg class="ico sm"><use href="#i-crown"/></svg> Подписки</button>
   <button class="tab" data-tab="telemetry" id="telemetryTab" style="display:none"><svg class="ico sm"><use href="#i-monitor"/></svg> Телеметрия</button>
+  <button class="tab" data-tab="bugs" id="bugsTab" style="display:none"><svg class="ico sm"><use href="#i-warning"/></svg> Баги <span id="bugsCount" class="badge-dot" style="display:none">0</span></button>
 </div>
 
 <section id="tab-dashboard" class="tab-panel" style="display:none">
@@ -333,6 +335,19 @@
     <thead><tr><th>Код</th><th>Дней</th><th>Создан</th><th>Статус</th><th></th></tr></thead>
     <tbody></tbody>
   </table>
+</section>
+
+<section id="tab-bugs" class="tab-panel" style="display:none">
+  <div class="dash-head">
+    <div>
+      <h2>Баги от пользователей</h2>
+      <p class="hint">Кнопка «БАГ» в шапке приложения. После исправления удалите запись — скриншот тоже удалится.</p>
+    </div>
+    <div class="dash-actions">
+      <button id="bugsRefresh"><svg class="ico sm"><use href="#i-refresh"/></svg> Обновить</button>
+    </div>
+  </div>
+  <div id="bugsList"></div>
 </section>
 
 <section id="tab-telemetry" class="tab-panel" style="display:none">

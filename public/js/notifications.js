@@ -127,6 +127,10 @@ async function openNotification(item) {
   if (notifModalEl) notifModalEl.style.display = 'none';
   const link = item.link || '';
   try {
+    if (link === 'admin:bugs') {
+      location.href = '/admin.html#bugs';
+      return;
+    }
     if (link.startsWith('ticket:')) {
       const id = link.slice('ticket:'.length);
       await loadTickets(); openChatTab('support'); toggleChat(true); openTicket(id);

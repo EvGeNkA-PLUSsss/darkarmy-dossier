@@ -119,6 +119,7 @@
   </div>
   <div class="user">
     <span id="userLabel" class="user-label"></span>
+    <button id="bugBtn" class="bug-btn" title="Сообщить о баге" aria-label="Сообщить о баге">БАГ</button>
     <button id="themeBtn" title="Сменить тему"><svg class="ico"><use href="#i-moon"/></svg></button>
     <button id="searchBtn" title="Поиск"><svg class="ico"><use href="#i-search"/></svg></button>
     <button id="trashBtn" title="Корзина"><svg class="ico"><use href="#i-trash"/></svg></button>
@@ -214,6 +215,7 @@
           <span class="sep"></span>
           <button data-md="link"><svg class="ico"><use href="#i-link"/></svg></button>
           <button data-md="image"><svg class="ico"><use href="#i-image"/></svg></button>
+          <button data-md="attach" title="Прикрепить файл"><svg class="ico"><use href="#i-paperclip"/></svg></button>
           <button data-md="table"><svg class="ico"><use href="#i-table"/></svg></button>
           <button data-md="hr">—</button>
           <button data-md="codeblock">{ }</button>
@@ -387,6 +389,7 @@
       <span class="sep"></span>
       <button data-md="link"><svg class="ico"><use href="#i-link"/></svg></button>
       <button data-md="image"><svg class="ico"><use href="#i-image"/></svg></button>
+      <button data-md="attach" title="Прикрепить файл"><svg class="ico"><use href="#i-paperclip"/></svg></button>
       <button data-md="table"><svg class="ico"><use href="#i-table"/></svg></button>
       <button data-md="hr">—</button>
       <button data-md="codeblock">{ }</button>
@@ -520,6 +523,28 @@
   </div>
 </div>
 
+<div id="bugModal" class="modal" style="display:none">
+  <div class="modal-inner small-modal bug-modal-inner">
+    <div class="modal-head">
+      <span><svg class="ico sm"><use href="#i-warning"/></svg> Сообщить о баге</span>
+      <button type="button" id="bugCloseBtn"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <form id="bugForm" class="simple-form">
+      <textarea name="description" placeholder="Что не так? Что делали, что ожидали увидеть?" maxlength="4000" rows="5" required></textarea>
+      <div class="bug-shot-row">
+        <input type="file" name="screenshot" id="bugScreenshot" accept="image/png,image/jpeg,image/webp" hidden>
+        <button type="button" id="bugAttachBtn" class="bug-attach-btn"><svg class="ico sm"><use href="#i-paperclip"/></svg> Прикрепить скриншот</button>
+        <span class="hint" id="bugShotName">PNG/JPG/WEBP до 3 МБ, можно вставить из буфера (Ctrl+V)</span>
+      </div>
+      <div id="bugShotPreview" class="bug-shot-preview" style="display:none"></div>
+      <div class="form-actions">
+        <button type="button" id="bugCancelBtn">Отмена</button>
+        <button type="submit" class="primary">Отправить баг</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="projectModal" class="modal" style="display:none">
   <div class="modal-inner project-modal-inner">
     <div class="modal-head">
@@ -588,6 +613,9 @@
     </div>
     <div class="move-body">
       <p class="hint" id="moveSource">Перемещаем: —</p>
+      <label class="move-project-label">Проект назначения:
+        <select id="moveProjectSelect"></select>
+      </label>
       <div id="moveTree" class="move-tree"></div>
     </div>
     <div class="form-actions move-actions">

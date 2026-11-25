@@ -51,12 +51,18 @@ const icon = (name, cls='') => `<svg class="ico ${cls}" aria-hidden="true"><use 
     document.getElementById('darcusTab').style.display = '';
     document.getElementById('adsTab').style.display = '';
     document.getElementById('subsTab').style.display = '';
+    document.getElementById('bugsTab').style.display = '';
     document.getElementById('refreshTelemetry').onclick = loadTelemetryUsers;
     document.getElementById('telemetrySearch').addEventListener('input', renderTelemetryUsers);
+    document.getElementById('bugsRefresh').onclick = loadBugs;
     loadDarcusConfig().catch(()=>{});
     loadAdsAdmin().catch(()=>{});
     loadSubsAdmin().catch(()=>{});
+    loadBugs().catch(()=>{});
   }
+
+  // Прямая ссылка из уведомления: /admin.html#bugs
+  if (location.hash === '#bugs') switchTab('bugs');
 
   document.addEventListener('click', e => {
     const pm = document.getElementById('punishMenu');
@@ -98,7 +104,7 @@ async function toggleTheme() {
 function switchTab(name) {
   document.querySelectorAll('.admin-tabs .tab').forEach(t =>
     t.classList.toggle('active', t.dataset.tab === name));
-  const tabs = ['dashboard','users','invites','punishments','changes','settings','telemetry','darcus','ads','subs'];
+  const tabs = ['dashboard','users','invites','punishments','changes','settings','telemetry','darcus','ads','subs','bugs'];
   for (const id of tabs) {
     const el = document.getElementById('tab-' + id);
     if (el) el.style.display = id === name ? '' : 'none';
@@ -107,6 +113,7 @@ function switchTab(name) {
   if (name === 'darcus') loadDarcusConfig();
   if (name === 'ads')    loadAdsAdmin();
   if (name === 'subs')   loadSubsAdmin();
+  if (name === 'bugs')   loadBugs();
 }
 window.switchTab = switchTab;
 
@@ -282,6 +289,63 @@ async function importMetadata(e) {
     await loadUsers().catch(() => {});
   } catch (err) {
     _alert('Импорт не удался: ' + err.message);
+  }
+}
+
+/* ============ Баг-репорты ============ */
+async function loadBugs() {
+  const box = document.getElementById('bugsList');
+  if (!box) return;
+  box.innerHTML = '<p class="hint">Загрузка…</p>';
+  try {
+    const r = await fetch('/api/bugs');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    renderBugs(d.items || []);
+    const badge = document.getElementById('bugsCount');
+    if (badge) {
+      const n = (d.items || []).length;
+      if (n) { badge.textContent = n; badge.style.display = ''; }
+      else badge.style.display = 'none';
+    }
+  } catch (e) {
+    box.innerHTML = `<p class="err">Не удалось загрузить баги: ${escapeHtml(e.message)}</p>`;
+  }
+}
+function renderBugs(items) {
+  const box = document.getElementById('bugsList');
+  if (!box) return;
+  if (!items.length) {
+    box.innerHTML = '<p class="hint">Багов нет — отлично.</p>';
+    return;
+  }
+  box.innerHTML = '';
+  for (const it of items) {
+    const card = document.createElement('div');
+    card.className = 'bug-card';
+    const shot = it.hasScreenshot
+      ? `<a class="bug-shot" href="${escapeHtml(it.screenshotUrl)}" target="_blank" rel="noopener"><img src="${escapeHtml(it.screenshotUrl)}" alt="Скриншот бага" loading="lazy"></a>`
+      : '<div class="bug-shot bug-shot-empty">Без скриншота</div>';
+    card.innerHTML = `
+      <div class="bug-card-body">
+        <div class="bug-card-head">
+          <b>${escapeHtml(it.user || '—')}</b>
+          <span class="muted">${new Date(it.createdAt).toLocaleString('ru-RU')}</span>
+          <span class="bug-page">${escapeHtml(it.page || '')}</span>
+        </div>
+        <div class="bug-desc">${escapeHtml(it.description || '')}</div>
+      </div>
+      ${shot}
+      <div class="bug-actions">
+        <button type="button" class="danger-btn" data-del="${escapeHtml(it.id)}">${icon('trash','sm')} Исправлено / удалить</button>
+      </div>`;
+    card.querySelector('[data-del]').onclick = async () => {
+      if (!await _confirm('Удалить баг из списка? Скриншот тоже будет удалён.')) return;
+      const r = await fetch('/api/bugs/' + encodeURIComponent(it.id), { method: 'DELETE' });
+      if (!r.ok) return _alert('Не удалось удалить баг');
+      await loadBugs();
+    };
+    box.appendChild(card);
   }
 }
 
