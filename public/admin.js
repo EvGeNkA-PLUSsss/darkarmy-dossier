@@ -52,9 +52,11 @@ const icon = (name, cls='') => `<svg class="ico ${cls}" aria-hidden="true"><use 
     document.getElementById('adsTab').style.display = '';
     document.getElementById('subsTab').style.display = '';
     document.getElementById('bugsTab').style.display = '';
+    document.getElementById('voiceTab').style.display = '';
     document.getElementById('refreshTelemetry').onclick = loadTelemetryUsers;
     document.getElementById('telemetrySearch').addEventListener('input', renderTelemetryUsers);
     document.getElementById('bugsRefresh').onclick = loadBugs;
+    initVoiceAdmin();
     loadDarcusConfig().catch(()=>{});
     loadAdsAdmin().catch(()=>{});
     loadSubsAdmin().catch(()=>{});
@@ -104,7 +106,7 @@ async function toggleTheme() {
 function switchTab(name) {
   document.querySelectorAll('.admin-tabs .tab').forEach(t =>
     t.classList.toggle('active', t.dataset.tab === name));
-  const tabs = ['dashboard','users','invites','punishments','changes','settings','telemetry','darcus','ads','subs','bugs'];
+  const tabs = ['dashboard','users','invites','punishments','changes','settings','telemetry','darcus','ads','subs','bugs','voice'];
   for (const id of tabs) {
     const el = document.getElementById('tab-' + id);
     if (el) el.style.display = id === name ? '' : 'none';
@@ -114,6 +116,7 @@ function switchTab(name) {
   if (name === 'ads')    loadAdsAdmin();
   if (name === 'subs')   loadSubsAdmin();
   if (name === 'bugs')   loadBugs();
+  if (name === 'voice')  loadVoiceAdmin();
 }
 window.switchTab = switchTab;
 
@@ -290,6 +293,61 @@ async function importMetadata(e) {
   } catch (err) {
     _alert('Импорт не удался: ' + err.message);
   }
+}
+
+/* ============ Голос: STT/TTS ============ */
+function initVoiceAdmin() {
+  const save = document.getElementById('voiceSave');
+  if (save) save.onclick = saveVoiceAdmin;
+  const iw = document.getElementById('voiceInstallWhisper');
+  if (iw) iw.onclick = () => installVoice('whisper');
+  const is = document.getElementById('voiceInstallSilero');
+  if (is) is.onclick = () => installVoice('silero');
+}
+async function loadVoiceAdmin() {
+  const st = document.getElementById('voiceStatus');
+  try {
+    const d = await (await fetch('/api/admin/voice')).json();
+    const w = d.whisper || {}, t = d.tts || {};
+    document.getElementById('voiceSttEngine').value = w.engine === 'faster-whisper' ? 'faster-whisper'
+      : (w.binaryPath ? 'whisper.cpp' : '');
+    document.getElementById('voiceWhisperModel').value = w.model || w.modelPath || '';
+    document.getElementById('voiceWhisperLang').value = w.language || 'ru';
+    document.getElementById('voiceTtsUrl').value = t.url || '';
+    document.getElementById('voiceTtsVoice').value = t.voice || '';
+    if (st) st.innerHTML = `STT: <b>${w.engine === 'faster-whisper' ? 'faster-whisper' : (w.binaryPath || 'браузер')}</b> ·
+      TTS: <b>${t.url ? escapeHtml(t.url) : 'браузер'}</b> · Silero-сервер: <b>${d.sileroHealthy ? 'работает' : 'не запущен'}</b>`;
+  } catch (e) { if (st) st.textContent = 'Ошибка загрузки: ' + e.message; }
+}
+async function saveVoiceAdmin() {
+  const body = {
+    whisper: {
+      engine: document.getElementById('voiceSttEngine').value,
+      model: document.getElementById('voiceWhisperModel').value.trim(),
+      language: document.getElementById('voiceWhisperLang').value.trim() || 'ru',
+    },
+    tts: {
+      url: document.getElementById('voiceTtsUrl').value.trim(),
+      voice: document.getElementById('voiceTtsVoice').value.trim(),
+    },
+  };
+  const r = await fetch('/api/admin/voice', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) return _alert('Не удалось сохранить настройки голоса');
+  await loadVoiceAdmin();
+  _alert('Настройки голоса сохранены');
+}
+async function installVoice(target) {
+  const log = document.getElementById('voiceLog');
+  if (log) log.textContent = target === 'whisper' ? 'Установка faster-whisper…' : 'Запуск Silero TTS…';
+  try {
+    const r = await fetch('/api/admin/voice/install', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    if (log) log.textContent = d.log || 'Готово';
+    await loadVoiceAdmin();
+  } catch (e) { if (log) log.textContent = 'Ошибка: ' + e.message; }
 }
 
 /* ============ Баг-репорты ============ */

@@ -35,6 +35,12 @@ module.exports = {
   backupDir: path.resolve(process.env.BACKUP_DIR || path.join(__dirname, '..', 'backups')),
   sessionSecret,
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
+  https: {
+    enabled: !!String(process.env.HTTPS_PORT || '').trim(),
+    port: parseInt(process.env.HTTPS_PORT, 10) || 0,
+    pfx: process.env.HTTPS_PFX ? path.resolve(process.env.HTTPS_PFX) : '',
+    passphrase: process.env.HTTPS_PFX_PASS || '',
+  },
   admin: {
     username: process.env.ADMIN_USERNAME || 'admin',
     initialPassword: process.env.ADMIN_PASSWORD || '', // пусто — сгенерировать случайный

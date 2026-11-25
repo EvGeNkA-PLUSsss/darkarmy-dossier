@@ -544,6 +544,24 @@ test('Darcus: чаты без лимита, без дублей пустых, у
   assert.equal(list.body.chats.length, 0);
 });
 
+test('голос: админ сохраняет STT/TTS, участнику запрещено', async () => {
+  const r = await admin.json('/api/admin/voice');
+  assert.equal(r.res.status, 200);
+  const patch = await admin.json('/api/admin/voice', {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ whisper: { engine: 'faster-whisper', model: 'base', language: 'ru' }, tts: { url: 'http://127.0.0.1:8765/tts', voice: 'aidar' } }),
+  });
+  assert.equal(patch.res.status, 200);
+  assert.equal(patch.body.whisper.engine, 'faster-whisper');
+  assert.equal(patch.body.tts.voice, 'aidar');
+  const caps = await admin.json('/api/darcus/capabilities');
+  assert.equal(caps.res.status, 200);
+  assert.equal(caps.body.stt, true);
+  const member = makeClient();
+  await member.login('member1', 'MemberTest123!');
+  assert.equal((await member.request('/api/admin/voice')).status, 403);
+});
+
 test('перемещение обновляет ссылки в Markdown и реклама умеет «на все баннеры»', async () => {
   const fd = new FormData();
   fd.append('file', new Blob([Buffer.from('89504e470d0a1a0a', 'hex')], { type: 'image/png' }), 'pic-ref.png');

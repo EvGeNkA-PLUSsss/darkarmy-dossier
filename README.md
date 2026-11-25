@@ -81,6 +81,28 @@ reverse proxy из [deploy/README.md](deploy/README.md). Если сеть по�
 «Общественная» (Public), правило для Private-профиля не сработает — переключите
 профиль сети или добавьте правило для Public осознанно.
 
+#### HTTPS для микрофона на LAN
+
+Браузер даёт доступ к микрофону только в secure context (HTTPS или localhost).
+Dossier умеет поднимать **дополнительный HTTPS-порт** с тем же приложением:
+
+1. Сгенерируйте самоподписанный сертификат (Windows PowerShell):
+   ```powershell
+   New-SelfSignedCertificate -Subject "CN=DarkArmy Dossier LAN" `
+     -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(2) `
+     -TextExtension @("2.5.29.17={text}DNS=localhost&IPAddress=192.168.120.128")
+   ```
+   и экспортируйте PFX, затем пропишите в `.env`: `HTTPS_PORT=7562`,
+   `HTTPS_PFX=data/tls/dossier.pfx`, `HTTPS_PFX_PASS=<пароль PFX>`.
+   Разрешите TCP 7562 в брандмауэре (Private).
+2. Откройте `https://192.168.120.128:7562` и примите предупреждение сертификата
+   (или установите `.cer` из `audit/tls/` как доверенный корень — тогда
+   предупреждения не будет).
+
+Альтернатива без HTTPS: если в админке включён серверный Whisper, кнопка
+микрофона по HTTP открывает **системный диктофон** телефона (`<input capture>`),
+запись уходит на распознавание. TTS при этом работает через браузер или Silero.
+
 ## Darcus (локальный ИИ)
 
 ```bash
@@ -105,14 +127,21 @@ Whisper и TTS включаются переменными `WHISPER_BIN`, `WHISP
 Darcus (по умолчанию каждое изменение файла подтверждается).
 
 - **STT**: если заданы `WHISPER_BIN` и `WHISPER_MODEL` — используется Whisper;
+  если в админке включён **faster-whisper** — локальный Whisper на Python;
   иначе браузерное Web Speech API (Chrome/Edge, нужен HTTPS или localhost).
 - **TTS**: по умолчанию браузерный синтез (выбирается русский голос ОС). Для
   качественного «Silero-подобного» голоса поднимите любой HTTP TTS-сервер,
   принимающий JSON `{text, voice, format, language}` и возвращающий аудио, и задайте
-  `TTS_URL=http://127.0.0.1:8000/tts` (например, обёртка над Silero TTS).
-- **Микрофон** браузер разрешает только на `localhost` или HTTPS. По HTTP в
-  локальной сети (`http://192.168.x.x:7561`) голосовой ввод заблокирован браузером —
-  это не баг Dossier; используйте HTTPS reverse proxy.
+  `TTS_URL=http://127.0.0.1:8765/tts`. В админке (**Голос**) есть кнопки
+  «Установить Whisper (авто)» и «Установить/запустить Silero» — они ставят
+  faster-whisper и запускают локальный Silero TTS (`scripts/silero_tts_server.py`).
+- **Микрофон**: браузер разрешает `getUserMedia` только на `localhost` или HTTPS.
+  По HTTP в локальной сети (`http://192.168.x.x:7561`) есть два пути:
+  1) открыть `https://192.168.120.128:7562` (встроенный HTTPS с самоподписанным
+     сертификатом, см. раздел LAN выше);
+  2) если серверный Whisper включён, кнопка микрофона открывает **системный
+     диктофон** телефона, а запись распознаётся на сервере — это работает и по HTTP.
+  TTS по HTTP работает всегда (браузерный синтез или Silero-сервер).
 
 ## Данные и бэкапы
 

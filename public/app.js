@@ -137,7 +137,10 @@ async function toggleRecording(btn) {
     return;
   }
   if (!window.isSecureContext) {
-    return dlA('Микрофон доступен только по HTTPS или на localhost. Сейчас сайт открыт по HTTP (локальная сеть) — браузер блокирует запись. Для голоса откройте Dossier по HTTPS (reverse proxy) или на этом ПК через http://127.0.0.1:7561.', 'Микрофон недоступен');
+    // HTTP в локальной сети: getUserMedia недоступен, но нативный диктофон телефона
+    // можно открыть через <input capture> — запись уйдёт на серверный Whisper.
+    if (state.voiceCaps && state.voiceCaps.stt) return recordViaNativeCapture(btn);
+    return dlA('Микрофон в браузере доступен только по HTTPS или на localhost. На этом ПК откройте http://127.0.0.1:7561, с телефона — https://' + location.hostname + ':7562 (примите сертификат). Также можно включить серверный Whisper в админке: тогда запись пойдёт через системный диктофон.', 'Микрофон недоступен');
   }
   // Если серверный Whisper не настроен — используем распознавание браузера (Chrome/Edge).
   if (state.voiceCaps && !state.voiceCaps.stt && getBrowserSpeechRecognition()) {
@@ -178,8 +181,24 @@ async function toggleRecording(btn) {
   }
 }
 
-async function sendAudioForTranscribe(blob, targetInputId, btn) {
-  if (btn) { btn.disabled = true; btn.innerHTML = icon('loader','sm spin'); }
+function recordViaNativeCapture(btn) {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'audio/*';
+  inp.capture = 'microphone';
+  inp.style.display = 'none';
+  document.body.appendChild(inp);
+  showToast('Откроется диктофон — запишите голосовое');
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0];
+    document.body.removeChild(inp);
+    if (!f) return;
+    await sendAudioForTranscribe(f, btn.dataset.mic || 'darcusInput', btn);
+  };
+  inp.click();
+}
+
+async function sendAudioForTranscribe(blob, targetInputId, btn) {  if (btn) { btn.disabled = true; btn.innerHTML = icon('loader','sm spin'); }
   try {
     const r = await fetch('/api/darcus/transcribe', {
       method: 'POST',
@@ -991,24 +1010,9 @@ function pruneTreeSelection() {
   });
 }
 function renderBulkBar() {
+  // Никакой «дурацкой» панели поверх дерева: обычное выделение, как в редакторе.
+  // Открытый файл считается выделенным (подсветка active), Ctrl/Shift — диапазон.
   pruneTreeSelection();
-  let bar = document.getElementById('bulkBar');
-  if (!state.selected.size) { if (bar) bar.remove(); return; }
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.id = 'bulkBar'; bar.className = 'bulk-bar';
-    const sidebar = document.getElementById('sidebar');
-    sidebar.insertBefore(bar, listEl);
-  }
-  bar.innerHTML = `<div class="bulk-info">Выбрано: <b>${state.selected.size}</b></div>
-    <div class="bulk-actions">
-      <button type="button" data-bulk="move" title="Переместить выбранные">${icon('folder','sm')} Переместить</button>
-      <button type="button" data-bulk="delete" class="danger" title="Удалить выбранные">${icon('trash','sm')} Удалить</button>
-      <button type="button" data-bulk="clear" title="Снять выделение">${icon('x','sm')}</button>
-    </div>`;
-  bar.querySelector('[data-bulk="move"]').onclick = bulkMoveSelected;
-  bar.querySelector('[data-bulk="delete"]').onclick = bulkDeleteSelected;
-  bar.querySelector('[data-bulk="clear"]').onclick = clearTreeSelection;
 }
 async function bulkDeleteSelected() {
   const paths = [...state.selected];
@@ -1051,6 +1055,18 @@ function insertMarkdownForProjectPath(areaEl, relPath) {
   areaEl.dispatchEvent(new Event('input', { bubbles: true }));
   areaEl.focus();
   try { if (areaEl.id === 'inlineArea') inlineUpdatePreview(); else updatePreview(); } catch {}
+}
+function initTreeShortcuts() {
+  if (document._treeShortcuts) return;
+  document._treeShortcuts = true;
+  document.addEventListener('keydown', e => {
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;
+    if (e.key === 'Escape' && state.selected.size) { clearTreeSelection(); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selected.size && canEditCurrentProject()) {
+      e.preventDefault(); bulkDeleteSelected();
+    }
+  });
 }
 function initMarkdownDrop() {
   for (const id of ['inlineArea', 'editorArea']) {
@@ -1249,11 +1265,15 @@ function initDragAndDrop() {
     if (!src) try { src = e.dataTransfer.getData('text/plain') || ''; } catch {}
     if (!src) src = state.draggingPath || '';
     if (!src || !targetIsDir) return;
-    const fname = src.split('/').pop();
-    const to = targetDir ? (targetDir + '/' + fname) : fname;
-    if (src === to) return;
-    if (targetDir === src || (targetDir && targetDir.startsWith(src + '/'))) return;
-    await moveItem(src, to);
+    const paths = (state.selected.size > 1 && state.selected.has(src)) ? [...state.selected] : [src];
+    for (const p of paths) {
+      const fname = p.split('/').pop();
+      const to = targetDir ? (targetDir + '/' + fname) : fname;
+      if (p === to) continue;
+      if (targetDir === p || (targetDir && targetDir.startsWith(p + '/'))) continue;
+      await moveItem(p, to);
+    }
+    if (paths.length > 1) clearTreeSelection();
   });
 }
 async function uploadFilesFromDrop(files, dir) {
@@ -3610,11 +3630,13 @@ async function sendDarcusQuery(query, attachments) {
     if (stopBtn) stopBtn.style.display = 'none';
     renderDarcusMessages();
     loadDarcusChats().catch(()=>{});
-    // Голосовой режим: озвучиваем последний ответ Darcus.
+    // Голосовой режим: озвучиваем последний ответ Darcus, но НЕ служебные
+    // подтверждения действий (создание/удаление файлов и т.п.).
     if (darcusVoiceModeOn()) {
       const lastMsg = [...state.darcus.messages].reverse().find(m => m.role !== 'user' && (m.content || '').trim());
-      if (lastMsg) setTimeout(() => {
-        try { toggleSpeakMessage(lastMsg.id, stripAiActions(lastMsg.content || ''), null); } catch {}
+      const hasActions = lastMsg && extractAiActions(lastMsg.content || '').length > 0;
+      if (lastMsg && !hasActions) setTimeout(() => {
+        try { toggleSpeakMessage(lastMsg.id, lastMsg.content || '', null); } catch {}
       }, 350);
     }
     // [NEW] Обработка запросов ИИ на изменение файлов
@@ -4234,6 +4256,7 @@ async function initExtensions() {
   initDarcusGen();
   initBugReport();
   initMarkdownDrop();
+  initTreeShortcuts();
   initProfileExt();
   initAds();
   // [FIX] Привязка кнопки «Кратко»
@@ -4344,7 +4367,22 @@ function _findRuVoice() {
 }
 
 /* [NEW] Озвучка: сначала пробуем серверный TTS (Supertonic 3), при ошибке — SpeechSynthesis */
+function cleanTextForTts(text) {
+  let t = String(text || '');
+  try { t = stripAiActions(t); } catch {}
+  // Служебную плашку действия не озвучиваем.
+  t = t.replace(/<div[^>]*darcus-action-done[^>]*>[\s\S]*?<\/div>/gi, ' ')
+       .replace(/<[^>]+>/g, ' ')
+       .replace(/```[\s\S]*?```/g, ' ')
+       .replace(/`[^`]*`/g, ' ')
+       .replace(/https?:\/\/\S+/g, ' ')
+       .replace(/[*#>_~|]+/g, ' ')
+       .replace(/\s+/g, ' ').trim();
+  return t;
+}
 async function toggleSpeakMessage(id, text, btnEl) {
+  text = cleanTextForTts(text);
+  if (!text) { showToast('Нечего озвучивать'); return; }
   if (state.ttsSpeakingId === id) { stopAllTts(); return; }
   stopAllTts();
 

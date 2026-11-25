@@ -1186,9 +1186,43 @@ async function ttsSynthesize(text, opts = {}) {
 }
 
 /* ================== Whisper STT ================== */
+function transcribeWithPython(buffer, w, language) {
+  const child = require('child_process');
+  const tmp = path.join(DATA_DIR, 'stt-' + crypto.randomBytes(8).toString('hex') + '.webm');
+  fs.writeFileSync(tmp, buffer);
+  const python = w.pythonPath || process.env.PYTHON_BIN || 'python';
+  const script = path.join(__dirname, 'scripts', 'faster_whisper_stt.py');
+  const model = w.model || w.modelPath || 'base';
+  const lang = language || w.language || 'ru';
+  return new Promise((resolve, reject) => {
+    const p = child.spawn(python, [script, String(model), tmp, lang], { windowsHide: true });
+    let stdout = '', stderr = '';
+    const timer = setTimeout(() => { try { p.kill(); } catch {} reject(new Error('faster-whisper timeout')); }, 180000);
+    p.stdout.on('data', d => stdout += d.toString('utf8'));
+    p.stderr.on('data', d => stderr += d.toString('utf8'));
+    p.on('error', e => { clearTimeout(timer); reject(e); });
+    p.on('close', code => {
+      clearTimeout(timer);
+      try { fs.unlinkSync(tmp); } catch {}
+      if (code !== 0) return reject(new Error('faster-whisper exit ' + code + ': ' + stderr.slice(-300)));
+      const lines = stdout.trim().split(/\r?\n/).filter(Boolean);
+      let parsed = null;
+      for (let i = lines.length - 1; i >= 0 && !parsed; i--) { try { parsed = JSON.parse(lines[i]); } catch {} }
+      if (!parsed) return reject(new Error('faster-whisper: пустой ответ'));
+      if (parsed.error) return reject(new Error(parsed.error));
+      resolve(String(parsed.text || '').trim());
+    });
+  });
+}
+
 async function transcribeAudio(buffer, opts = {}) {
   const cfg = loadAiConfig();
   const w = cfg.whisper || {};
+  const usePython = (w.engine === 'faster-whisper') || w.binaryPath === 'faster-whisper';
+  if (usePython && !(w.binaryPath && w.binaryPath !== 'faster-whisper')) {
+    const text = await transcribeWithPython(buffer, w, opts.language);
+    return { text };
+  }
   if (!w.binaryPath || !w.modelPath)
     throw new Error('Whisper не настроен (WHISPER_BIN / WHISPER_MODEL)');
 

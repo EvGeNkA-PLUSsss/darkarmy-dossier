@@ -3415,13 +3415,99 @@ app.post('/api/darcus/summarize', requireAuth, requireSubscription, rateLimitDar
 });
 
 /* ---------- TTS прокси ---------- */
+/* ---------- Админ: настройки голоса (STT/TTS) ---------- */
+let sileroProc = null;
+app.get('/api/admin/voice', requireSelfAdmin, async (req, res) => {
+  let ai = {};
+  try { ai = darcus.loadAiConfig(); } catch {}
+  let sileroHealthy = false;
+  try {
+    const port = 8765;
+    sileroHealthy = await new Promise(resolve => {
+      const rq = require('http').get({ host: '127.0.0.1', port, path: '/health', timeout: 1200 }, r => {
+        let d = ''; r.on('data', c => d += c); r.on('end', () => { try { resolve(!!JSON.parse(d).ok); } catch { resolve(true); } });
+      });
+      rq.on('error', () => resolve(false));
+      rq.on('timeout', () => { rq.destroy(); resolve(false); });
+    });
+  } catch {}
+  res.json({
+    whisper: ai.whisper || {}, tts: ai.tts || {},
+    sileroHealthy, sileroPid: sileroProc ? sileroProc.pid : null,
+  });
+});
+app.patch('/api/admin/voice', requireSelfAdmin, (req, res) => {
+  const ai = darcus.loadAiConfig();
+  const b = req.body || {};
+  if (b.whisper && typeof b.whisper === 'object') {
+    ai.whisper = { ...(ai.whisper || {}) };
+    for (const k of ['engine', 'binaryPath', 'modelPath', 'model', 'pythonPath', 'language']) {
+      if (typeof b.whisper[k] === 'string') ai.whisper[k] = b.whisper[k].trim();
+    }
+  }
+  if (b.tts && typeof b.tts === 'object') {
+    ai.tts = { ...(ai.tts || {}) };
+    for (const k of ['url', 'voice', 'format']) {
+      if (typeof b.tts[k] === 'string') ai.tts[k] = b.tts[k].trim();
+    }
+  }
+  darcus.saveAiConfig(ai);
+  logChange({ user: req.user.username, action: 'voice-settings', details: 'STT/TTS обновлены' });
+  res.json({ ok: true, whisper: ai.whisper, tts: ai.tts });
+});
+app.post('/api/admin/voice/install', requireSelfAdmin, async (req, res) => {
+  const target = String(req.body && req.body.target || '');
+  const ai = darcus.loadAiConfig();
+  const { execFile } = require('child_process');
+  const { promisify } = require('util');
+  const run = promisify(execFile);
+  try {
+    if (target === 'whisper') {
+      let log = '';
+      try {
+        const r = await run('python', ['-m', 'pip', 'install', '--upgrade', 'faster-whisper'], { timeout: 180000, windowsHide: true });
+        log = ((r.stdout || '') + (r.stderr || '')).slice(-1500);
+      } catch (e) { log = ((e.stdout || '') + (e.stderr || '') + e.message).slice(-1500); }
+      ai.whisper = { ...(ai.whisper || {}), engine: 'faster-whisper', model: 'base', language: 'ru' };
+      darcus.saveAiConfig(ai);
+      logChange({ user: req.user.username, action: 'voice-install', details: 'faster-whisper' });
+      return res.json({ ok: true, target, log });
+    }
+    if (target === 'silero') {
+      const healthy = await new Promise(resolve => {
+        const rq = require('http').get({ host: '127.0.0.1', port: 8765, path: '/health', timeout: 1200 }, r => {
+          let d = ''; r.on('data', c => d += c); r.on('end', () => resolve(true));
+        });
+        rq.on('error', () => resolve(false));
+        rq.on('timeout', () => { rq.destroy(); resolve(false); });
+      });
+      if (!healthy && (!sileroProc || sileroProc.exitCode !== null)) {
+        const script = path.join(__dirname, 'scripts', 'silero_tts_server.py');
+        sileroProc = require('child_process').spawn('python', [script, '--port', '8765'], {
+          cwd: __dirname, detached: true, stdio: 'ignore', windowsHide: true,
+        });
+        sileroProc.unref();
+      }
+      ai.tts = { ...(ai.tts || {}), url: 'http://127.0.0.1:8765/tts', voice: 'aidar', format: 'wav' };
+      darcus.saveAiConfig(ai);
+      logChange({ user: req.user.username, action: 'voice-install', details: 'silero tts server' });
+      return res.json({ ok: true, target, log: 'Silero TTS: 127.0.0.1:8765. Первый синтез загружает модель (может занять минуту).' });
+    }
+    return res.status(400).json({ error: 'unknown target' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/darcus/capabilities', requireAuth, (req, res) => {
   let ai = {};
   try { ai = darcus.loadAiConfig(); } catch {}
+  const w = ai.whisper || {};
+  const pyStt = w.engine === 'faster-whisper' || w.binaryPath === 'faster-whisper';
   res.json({
-    stt: !!(ai.whisper && ai.whisper.binaryPath && ai.whisper.modelPath),
+    stt: !!(pyStt || (w.binaryPath && w.modelPath)),
+    sttEngine: pyStt ? 'faster-whisper' : (w.binaryPath && w.modelPath ? 'whisper.cpp' : 'browser'),
     tts: !!(ai.tts && ai.tts.url),
-    lang: (ai.whisper && ai.whisper.language) || 'ru',
+    ttsMode: (ai.tts && ai.tts.url) ? 'server' : 'browser',
+    lang: w.language || 'ru',
   });
 });
 
@@ -3842,6 +3928,7 @@ process.on('uncaughtException', (err) => {
 
 /* ---------- Старт и корректная остановка ---------- */
 let httpServer = null;
+let httpsServer = null;
 let shuttingDown = false;
 
 function gracefulShutdown(signal) {
@@ -3863,7 +3950,7 @@ function gracefulShutdown(signal) {
 }
 
 function startServer() {
-  httpServer = app.listen(PORT, cfg.bindHost, () => {
+  const onStarted = () => {
     loadUsers();
     loadProjects();
     migrateOcrCacheIfNeeded();
@@ -3884,9 +3971,32 @@ function startServer() {
 
     logger.info({ port: PORT, bindHost: cfg.bindHost, projectsRoot: PROJECTS_ROOT, logFile: LOG_FILE, env: cfg.env }, 'DarkArmy Dossier started');
     console.log(`DarkArmy Dossier: http://${cfg.bindHost}:${PORT}`);
+    if (cfg.https.enabled) console.log(`HTTPS (микрофон): https://${cfg.bindHost}:${cfg.https.port}`);
     console.log(`Проекты: ${PROJECTS_ROOT}`);
     console.log(`Лог: ${LOG_FILE}`);
-  });
+  };
+
+  httpServer = app.listen(PORT, cfg.bindHost, onStarted);
+
+  // Дополнительный HTTPS-порт с тем же приложением: без него браузер не даёт
+  // доступ к микрофону на LAN-IP (secure context требуется для getUserMedia).
+  if (cfg.https.enabled) {
+    try {
+      if (!cfg.https.pfx || !fs.existsSync(cfg.https.pfx)) {
+        logger.warn({ pfx: cfg.https.pfx }, 'HTTPS: PFX не найден — HTTPS-порт не запущен');
+      } else {
+        const https = require('https');
+        httpsServer = https.createServer({
+          pfx: fs.readFileSync(cfg.https.pfx),
+          passphrase: cfg.https.passphrase,
+        }, app);
+        httpsServer.listen(cfg.https.port, cfg.bindHost, () => {
+          logger.info({ port: cfg.https.port, bindHost: cfg.bindHost }, 'DarkArmy Dossier HTTPS started');
+        });
+        httpsServer.on('error', e => logger.warn({ err: e.message }, 'HTTPS server error'));
+      }
+    } catch (e) { logger.warn({ err: e.message }, 'HTTPS start failed'); }
+  }
   return httpServer;
 }
 
