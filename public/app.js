@@ -3673,7 +3673,7 @@ function initProfileExt() {
       status.textContent = has ? (state.subscription.until ? 'активна до ' + new Date(state.subscription.until).toLocaleDateString('ru-RU') : 'активна') : 'нет';
       line.style.display = '';
       actBox.style.display = has ? 'none' : '';
-      adsChk.parentElement.style.display = (state.user?.role === 'admin') ? '' : 'none';
+      adsChk.parentElement.style.display = (state.user?.role === 'admin') ? 'flex' : 'none';
     };
   }
   if (actBtn) actBtn.onclick = async () => {
