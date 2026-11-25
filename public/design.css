@@ -943,6 +943,14 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
   background: rgba(239, 68, 68, .08);
   font-family: var(--font-ui, inherit);
 }
+#content .ocr-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-dim);
+  font-family: var(--font-ui, inherit);
+}
+#content .ocr-loading .ico { animation: spinIco 1s linear infinite; color: var(--accent); }
 
 .chat-msg .attach-thumb { max-width: min(260px, 100%); }
 .chat-msg .attach-thumb img { object-fit: contain; background: var(--surface-2); max-height: 260px; }

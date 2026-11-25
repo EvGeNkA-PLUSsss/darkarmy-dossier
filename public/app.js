@@ -3513,17 +3513,33 @@ async function runTranslate(textArea, fileRef, btn) {
 }
 /* OCR */
 let ocrState = { path: null, data: null, visible: false };
+function removeOcrLoading() {
+  document.querySelectorAll('#content .ocr-loading').forEach(el => el.remove());
+}
+function showOcrLoading() {
+  removeOcrLoading();
+  const wrap = document.querySelector('#content .ocr-wrap') || document.getElementById('content');
+  if (!wrap || !wrap.parentNode) return null;
+  const panel = document.createElement('div');
+  panel.className = 'ocr-panel ocr-loading';
+  panel.innerHTML = `${icon('loader','sm spin')} Darcus распознаёт текст…`;
+  wrap.parentNode.insertBefore(panel, wrap.nextSibling);
+  return panel;
+}
 async function loadOcrInfo(path) {
   try {
     const d = await fetchJson(`/api/darcus/image-info?projectId=${encodeURIComponent(state.projectId)}&path=${encodeURIComponent(path)}`);
     const hasText = !!(d.item && (d.item.text || d.item.description));
     ocrState = { path, data: d.item, visible: hasText };
     const btn = document.getElementById('ocrToggleBtn');
-    if (hasText) { if (btn) btn.style.display = ''; }
+    if (hasText) { if (btn) btn.style.display = ''; removeOcrLoading(); }
     else {
       if (btn) btn.style.display = 'none';
+      // Сразу показываем, что OCR идёт: на слабом ПК это 10-20 секунд.
+      const loading = showOcrLoading();
       fetchJson('/api/darcus/image-analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, projectId: state.projectId }) })
         .then(res => {
+          if (!loading || loading.isConnected) removeOcrLoading();
           if (res && res.item && state.currentFile === path) {
             const ok = !!(res.item.text || res.item.description);
             ocrState = { path, data: res.item, visible: ok };
@@ -3531,6 +3547,7 @@ async function loadOcrInfo(path) {
             if (ok) renderOcrOverlay();
           }
         }).catch(err => {
+          removeOcrLoading();
           // Показываем причину, почему OCR не сработал (модель/таймаут), а не молчим.
           if (state.currentFile !== path) return;
           const wrap = document.querySelector('#content .ocr-wrap') || document.getElementById('content');

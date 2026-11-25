@@ -40,10 +40,12 @@ test('все SVG-иконки админки объявлены', () => {
 
 test('ключевые UI-стили Darcus/OCR на месте', () => {
   const css = read('style.css') + '\n' + read('design.css');
-  for (const cls of ['.darcus-image-viewer', '.darcus-attach-thumb', '.chat-form .stop-btn', '#content .ocr-wrap']) {
+  for (const cls of ['.darcus-image-viewer', '.darcus-attach-thumb', '.chat-form .stop-btn', '#content .ocr-wrap', '.ocr-loading', '.tree-generating']) {
     assert.ok(css.includes(cls), 'нет стилей для ' + cls);
   }
   const app = read('app.js');
   assert.ok(app.includes('makeImageThumb'), 'нет генерации миниатюр для чата');
   assert.ok(app.includes('_scanJsonObject'), 'нет балансного парсера ACTION');
+  assert.ok(app.includes('showOcrLoading'), 'нет индикатора распознавания OCR');
+  assert.ok(app.includes('tree-generating'), 'нет служебной строки генерации Darcus');
 });
