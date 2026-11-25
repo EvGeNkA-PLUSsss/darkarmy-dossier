@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Вход — DarkArmy Dossier</title>
+<meta name="theme-color" content="#0a0b0f">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5 L19.5 5.5 V11.5 C19.5 16.5 16.2 20.2 12 21.5 C7.8 20.2 4.5 16.5 4.5 11.5 V5.5 Z' stroke='%23e63946' stroke-width='1.6' fill='none'/%3E%3Cpath d='M9 11.7 L11 13.7 L15.2 9.5' stroke='%23e63946' stroke-width='1.8' fill='none'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body class="login-body">
+  <form id="loginForm" class="login-card" autocomplete="on">
+    <div class="login-logo">
+      <svg width="48" height="48" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2.5 L19.5 5.5 V11.5 C19.5 16.5 16.2 20.2 12 21.5 C7.8 20.2 4.5 16.5 4.5 11.5 V5.5 Z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/>
+        <path d="M9 11.7 L11 13.7 L15.2 9.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1>DarkArmy <span class="accent">Dossier</span></h1>
+    <p class="login-sub">Введите учётные данные</p>
+    <input name="username" placeholder="Логин" autocomplete="username" required>
+    <input name="password" type="password" placeholder="Пароль" autocomplete="current-password" required>
+    <button type="submit">Войти</button>
+    <p class="login-sub" style="margin-top:6px">
+      Нет аккаунта? <a href="/register.html" style="color:var(--link)">Зарегистрироваться</a>
+    </p>
+    <p id="err" class="err"></p>
+  </form>
+  <script>
+    try {
+      const t = localStorage.getItem('theme');
+      if (t) document.documentElement.setAttribute('data-theme', t);
+    } catch {}
+
+    const params = new URLSearchParams(location.search);
+    if (params.get('banned')) {
+      document.getElementById('err').textContent = 'Вы забанены. Обратитесь к администрации.';
+    }
+
+    const f = document.getElementById('loginForm');
+    f.onsubmit = async e => {
+      e.preventDefault();
+      const errEl = document.getElementById('err');
+      errEl.textContent = '';
+      const fd = new FormData(f);
+      try {
+        const r = await fetch('/api/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: fd.get('username'), password: fd.get('password') })
+        });
+        const data = await r.json().catch(() => ({}));
+        if (r.ok) {
+          try { localStorage.setItem('theme', data.theme || 'dark'); } catch {}
+          location.href = '/';
+        } else if (r.status === 429) {
+          errEl.textContent = data.error || 'Слишком много попыток';
+        } else if (r.status === 403 && data.error === 'banned') {
+          const until = data.until ? (' до ' + new Date(data.until).toLocaleString('ru-RU')) : ' навсегда';
+          errEl.textContent = 'Вы забанены' + until + (data.reason ? ('. Причина: ' + data.reason) : '');
+        } else {
+          errEl.textContent = 'Неверный логин или пароль';
+        }
+      } catch { errEl.textContent = 'Ошибка сети'; }
+    };
+    fetch('/api/me').then(r => r.json()).then(d => {
+      if (d.user) location.href = '/';
+      if (d.theme) {
+        document.documentElement.setAttribute('data-theme', d.theme);
+        try { localStorage.setItem('theme', d.theme); } catch {}
+      }
+    });
+  </script>
+</body>
+</html>

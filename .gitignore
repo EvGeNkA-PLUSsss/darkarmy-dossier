@@ -1,0 +1,30 @@
+# Зависимости
+node_modules/
+
+# Секреты и локальная конфигурация
+.env
+.env.*
+!.env.example
+
+# Данные приложения: пользователи, пароли (bcrypt), инвайты, телеметрия,
+# журнал изменений, переписка, кэши ИИ. В git не попадают.
+data/
+!data/.gitkeep
+
+# Бэкапы и локальные артефакты
+backups/
+*.log
+data/tmp/
+
+# ОС / редакторы
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+.vscode/
+
+# Артефакты тестов и покрытия
+coverage/
+.nyc_output/
+test-results/
+playwright-report/

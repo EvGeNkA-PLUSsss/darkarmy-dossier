@@ -1,0 +1,22 @@
+{
+  "name": "darkarmydossier",
+  "version": "1.0.0",
+  "description": "DarkArmy Dossier - dark web site for files",
+  "license": "AGPL v3",
+  "author": "DarkArmy",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "mammoth": "^1.12.3",
+    "multer": "^2.3.0",
+    "officeparser": "^7.8.0",
+    "pdf-parse": "^2.4.5",
+    "xlsx": "^0.18.5"
+  }
+}

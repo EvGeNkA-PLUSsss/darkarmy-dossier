@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0b0f">
+<title>DarkArmy Dossier</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5 L19.5 5.5 V11.5 C19.5 16.5 16.2 20.2 12 21.5 C7.8 20.2 4.5 16.5 4.5 11.5 V5.5 Z' stroke='%23e63946' stroke-width='1.6' fill='none'/%3E%3Cpath d='M9 11.7 L11 13.7 L15.2 9.5' stroke='%23e63946' stroke-width='1.8' fill='none'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
+<symbol id="i-folder-plus" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 11v6M9 14h6"/></symbol>
+<symbol id="i-folder-down" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 11 12 17 9 14"/><line x1="15" y1="14" x2="9" y2="14"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7"/></symbol>
+<symbol id="i-file-text" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7M16 13H8M16 17H8M10 9H8"/></symbol>
+<symbol id="i-file-doc" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></symbol>
+<symbol id="i-file-code" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7M10 13l-2 2 2 2M14 17l2-2-2-2"/></symbol>
+<symbol id="i-image" viewBox="0 0 24 24"><path d="M3 5h18v14H3z"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></symbol>
+<symbol id="i-image-plus" viewBox="0 0 24 24"><path d="M3 5h18v14H3z"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21M18 2v6M15 5h6"/></symbol>
+<symbol id="i-pdf" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7M9 15v-4h1.5a1.5 1.5 0 0 1 0 3H9M14 11v4"/></symbol>
+<symbol id="i-sheet" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7M8 13h8M8 17h8"/></symbol>
+<symbol id="i-doc" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7M8 13h8M8 17h5"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></symbol>
+<symbol id="i-message" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></symbol>
+<symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+<symbol id="i-user-plus" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></symbol>
+<symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><path d="M21 2l-2 2"/><circle cx="8" cy="15" r="5"/><path d="M11.5 11.5L22 1M18 5l2 2"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></symbol>
+<symbol id="i-trash-2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></symbol>
+<symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+<symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></symbol>
+<symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
+<symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+<symbol id="i-check-circle" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></symbol>
+<symbol id="i-check-square" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></symbol>
+<symbol id="i-square" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+<symbol id="i-table" viewBox="0 0 24 24"><path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/></symbol>
+<symbol id="i-code" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></symbol>
+<symbol id="i-bold" viewBox="0 0 24 24"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6zM6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/></symbol>
+<symbol id="i-italic" viewBox="0 0 24 24"><path d="M19 4h-9M14 20H5M15 4L9 20"/></symbol>
+<symbol id="i-strike" viewBox="0 0 24 24"><path d="M6 16c.5 2 2.5 3 5.5 3 3.5 0 5.5-1.5 5.5-3.5 0-1.5-1-2.5-2.5-3M6 8c.5-2 2.5-3 5.5-3C15 5 17 6.5 17 8.5c0 1.5-1 2.5-2.5 3M4 12h16"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+<symbol id="i-list-ordered" viewBox="0 0 24 24"><path d="M10 6h11M10 12h11M10 18h11M4 6h1v4M4 10h2M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></symbol>
+<symbol id="i-list-check" viewBox="0 0 24 24"><path d="M3 6h11M3 12h11M3 18h11M18 6l2 2 3-3M18 16l2 2 3-3"/></symbol>
+<symbol id="i-quote" viewBox="0 0 24 24"><path d="M6 17h3l2-4V7H5v6h3zM16 17h3l2-4V7h-6v6h3z"/></symbol>
+<symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+<symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="i-warning" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></symbol>
+<symbol id="i-volume-x" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M23 9l-6 6M17 9l6 6"/></symbol>
+<symbol id="i-gavel" viewBox="0 0 24 24"><path d="M14 4l6 6-3 3-6-6zM3 21l9-9M9 5l-6 6 3 3 6-6zM21 15l-4 4"/></symbol>
+<symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+<symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
+<symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></symbol>
+<symbol id="i-box" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></symbol>
+<symbol id="i-clipboard" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></symbol>
+<symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+<symbol id="i-lock-open" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></symbol>
+<symbol id="i-paperclip" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+<symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+<symbol id="i-crown" viewBox="0 0 24 24"><path d="M2 18l3-9 5 5 2-7 2 7 5-5 3 9z"/><path d="M2 22h20"/></symbol>
+<symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+<symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 2l1.8 4.7L18.5 8.5l-4.7 1.8L12 15l-1.8-4.7L5.5 8.5l4.7-1.8zM19 14l.9 2.4 2.4.9-2.4.9L19 20.6l-.9-2.4-2.4-.9 2.4-.9zM5 14l.7 1.8L7.5 16.5l-1.8.7L5 19l-.7-1.8L2.5 16.5l1.8-.7z"/></symbol>
+<symbol id="i-loader" viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5z"/><path d="M6.5 17A2.5 2.5 0 0 0 4 19.5v2.5h16v-2.5"/></symbol>
+<symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/></symbol>
+<symbol id="i-print" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></symbol>
+<symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/></symbol>
+<symbol id="i-volume-off" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M23 9l-6 6M17 9l6 6"/></symbol>
+<symbol id="i-message-square" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+<symbol id="i-brain" viewBox="0 0 24 24"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.54z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.54z"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+<symbol id="i-microphone" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></symbol>
+</defs></svg>
+
+<header id="topbar">
+  <div class="brand">
+    <!-- [UX] Кнопка меню убрана — открытие сайдбара свайпом справа -->
+    <svg class="logo" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2.5 L19.5 5.5 V11.5 C19.5 16.5 16.2 20.2 12 21.5 C7.8 20.2 4.5 16.5 4.5 11.5 V5.5 Z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
+      <path d="M9 11.7 L11 13.7 L15.2 9.5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span class="brand-text">DarkArmy <span class="brand-accent">Dossier</span></span>
+  </div>
+  <div class="user">
+    <span id="userLabel" class="user-label"></span>
+    <button id="themeBtn" title="Сменить тему"><svg class="ico"><use href="#i-moon"/></svg></button>
+    <button id="searchBtn" title="Поиск"><svg class="ico"><use href="#i-search"/></svg></button>
+    <button id="trashBtn" title="Корзина"><svg class="ico"><use href="#i-trash"/></svg></button>
+    <button id="chatBtn" title="Чат"><svg class="ico"><use href="#i-message"/></svg><span id="chatBadge" class="badge-dot" style="display:none">0</span></button>
+    <button id="inboxBtn" style="display:none" title="Входящие"><svg class="ico"><use href="#i-clipboard"/></svg><span id="inboxBadge" class="badge-dot" style="display:none">0</span></button>
+    <button id="profileBtn" title="Профиль"><svg class="ico"><use href="#i-user"/></svg></button>
+    <a href="/admin.html" id="adminLink" style="display:none" title="Админ-панель"><svg class="ico"><use href="#i-settings"/></svg></a>
+    <button id="logoutBtn" title="Выйти"><svg class="ico"><use href="#i-logout"/></svg></button>
+  </div>
+</header>
+
+<div id="ad-slot-topbar" class="ad-slot ad-topbar" data-slot="topbar"></div>
+
+<div id="layout">
+  <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
+  <aside id="sidebar">
+    <div id="ad-slot-sidebar-top" class="ad-slot ad-sidebar" data-slot="sidebar-top"></div>
+
+    <div class="sidebar-actions">
+      <button id="newFileBtn"   class="side-btn" style="display:none" title="Создать .md"><svg class="ico sm"><use href="#i-plus"/></svg> Файл</button>
+      <button id="newFolderBtn" class="side-btn" style="display:none" title="Создать папку"><svg class="ico sm"><use href="#i-folder-plus"/></svg> Папка</button>
+      <button id="uploadBtn"    class="side-btn" style="display:none" title="Загрузить файл"><svg class="ico sm"><use href="#i-upload"/></svg> Файл</button>
+      <input  id="uploadInput"  type="file" style="display:none">
+    </div>
+    <button id="darcusGenBtn" class="side-btn darcus-create-btn" style="display:none" title="Создать документ через Darcus">
+      <svg class="ico sm"><use href="#i-star"/></svg> Darcus — создать
+    </button>
+    <div id="tree" class="tree"></div>
+
+    <div id="ad-slot-sidebar-bottom" class="ad-slot ad-sidebar" data-slot="sidebar-bottom"></div>
+
+    <div class="project-picker">
+      <div class="project-picker-label"><svg class="ico sm"><use href="#i-layers"/></svg> Проект</div>
+      <div class="project-dropdown" id="projectDropdown">
+        <button type="button" id="projectDropdownBtn" class="project-dropdown-btn">
+          <span id="projectDropdownName" class="project-dropdown-name">—</span>
+          <svg class="ico sm project-dropdown-arrow"><use href="#i-chevron-down"/></svg>
+        </button>
+        <div class="project-dropdown-panel" id="projectDropdownPanel" hidden>
+          <div class="project-search-wrap">
+            <svg class="ico sm"><use href="#i-search"/></svg>
+            <input id="projectSearchInput" placeholder="Поиск проекта…" autocomplete="off">
+          </div>
+          <div id="projectList" class="project-list"></div>
+          <div class="project-list-actions">
+            <button type="button" id="projectAddBtn" class="project-add-btn">
+              <svg class="ico sm"><use href="#i-plus"/></svg> Новый проект
+            </button>
+          </div>
+        </div>
+      </div>
+      <button id="projectMenuBtn" class="proj-btn proj-btn-wide" title="Меню проекта">
+        <svg class="ico sm"><use href="#i-settings"/></svg> Управление
+      </button>
+    </div>
+  </aside>
+
+  <main id="viewer">
+    <div id="filebar" style="display:none">
+      <span id="fileName"></span>
+      <div class="filebar-actions">
+        <button id="changesToggleBtn" style="display:none"><svg class="ico sm"><use href="#i-clipboard"/></svg> <span class="hide-mobile">Изменения</span></button>
+        <button id="requestFileBtn" title="Запрос на изменение"><svg class="ico sm"><use href="#i-edit"/></svg> <span class="hide-mobile">Запрос</span></button>
+        <button id="printBtn" title="Печать"><svg class="ico sm"><use href="#i-print"/></svg> <span class="hide-mobile">Печать</span></button>
+        <button id="reportFileBtn" title="Пожаловаться"><svg class="ico sm"><use href="#i-warning"/></svg></button>
+        <button id="ocrToggleBtn" style="display:none" title="Показать/скрыть распознанный текст">
+          <svg class="ico sm"><use href="#i-eye"/></svg> <span class="hide-mobile">OCR</span>
+        </button>
+        <button id="summarizeBtn" title="AI-суммаризация"><svg class="ico sm"><use href="#i-sparkles"/></svg> <span class="hide-mobile">Кратко</span></button>
+        <button id="editBtn" class="primary" style="display:none"><svg class="ico sm"><use href="#i-edit"/></svg> <span class="hide-mobile">Ред.</span></button>
+      </div>
+    </div>
+
+    <div id="ad-slot-filebar" class="ad-slot ad-filebar" data-slot="filebar"></div>
+
+    <div id="scrollArea">
+      <div id="inlineEditor" class="inline-editor" style="display:none">
+        <div class="inline-editor-toolbar">
+          <button data-md="h1">H1</button>
+          <button data-md="h2">H2</button>
+          <button data-md="h3">H3</button>
+          <span class="sep"></span>
+          <button data-md="bold"><svg class="ico"><use href="#i-bold"/></svg></button>
+          <button data-md="italic"><svg class="ico"><use href="#i-italic"/></svg></button>
+          <button data-md="strike"><svg class="ico"><use href="#i-strike"/></svg></button>
+          <button data-md="code"><svg class="ico"><use href="#i-code"/></svg></button>
+          <span class="sep"></span>
+          <button data-md="ul"><svg class="ico"><use href="#i-list"/></svg></button>
+          <button data-md="ol"><svg class="ico"><use href="#i-list-ordered"/></svg></button>
+          <button data-md="quote"><svg class="ico"><use href="#i-quote"/></svg></button>
+          <span class="sep"></span>
+          <button data-md="link"><svg class="ico"><use href="#i-link"/></svg></button>
+          <button data-md="image"><svg class="ico"><use href="#i-image"/></svg></button>
+          <button data-md="table"><svg class="ico"><use href="#i-table"/></svg></button>
+          <button data-md="hr">—</button>
+          <button data-md="codeblock">{ }</button>
+          <span class="sep"></span>
+          <button class="ai-btn" data-ai="rephrase" title="Перефразировать"><svg class="ico sm"><use href="#i-refresh"/></svg></button>
+          <button class="ai-btn" data-ai="shorten"  title="Сократить"><svg class="ico sm"><use href="#i-scissors"/></svg></button>
+          <button class="ai-btn" data-ai="fix"      title="Исправить"><svg class="ico sm"><use href="#i-check-circle"/></svg></button>
+          <button class="ai-btn" data-ai="translate" title="Перевести"><svg class="ico sm"><use href="#i-globe"/></svg></button>
+          <span class="sep"></span>
+          <button id="inlinePreviewToggle" title="Preview"><svg class="ico"><use href="#i-eye"/></svg></button>
+        </div>
+        <div class="inline-editor-body">
+          <textarea id="inlineArea" spellcheck="false"></textarea>
+          <div id="inlinePreview" class="markdown-body"></div>
+        </div>
+      </div>
+
+      <div id="content">
+        <div id="ad-slot-empty-viewer" class="ad-slot ad-empty" data-slot="empty-viewer"></div>
+        <p class="hint">Выберите файл слева</p>
+      </div>
+    </div>
+  </main>
+
+  <aside id="chatPanel" class="chat-panel">
+    <div class="chat-panel-header">
+      <span><svg class="ico sm"><use href="#i-message"/></svg> Чаты</span>
+      <button id="chatPanelClose" title="Свернуть"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="chat-tabs">
+      <button class="chat-tab active" data-tab="general" title="Общий">
+        <svg class="ico sm"><use href="#i-message"/></svg>
+        <span class="hide-mobile">Общий</span>
+        <span id="tabGeneralBadge" class="badge-dot" style="display:none">0</span>
+      </button>
+      <button class="chat-tab" data-tab="project" title="Чат проекта">
+        <svg class="ico sm"><use href="#i-users"/></svg>
+        <span class="hide-mobile">Проект</span>
+        <span id="tabProjectBadge" class="badge-dot" style="display:none">0</span>
+      </button>
+      <button class="chat-tab" data-tab="support" title="Поддержка">
+        <svg class="ico sm"><use href="#i-clipboard"/></svg>
+        <span class="hide-mobile">Поддержка</span>
+        <span id="tabSupportBadge" class="badge-dot" style="display:none">0</span>
+      </button>
+      <button class="chat-tab darcus-tab" data-tab="darcus" title="Darcus — ИИ-ассистент">
+        <svg class="ico sm"><use href="#i-star"/></svg>
+        <span class="hide-mobile">Darcus</span>
+      </button>
+    </div>
+
+    <div id="ad-slot-chat" class="ad-slot ad-chat" data-slot="chat-top"></div>
+
+    <div class="chat-view" id="chatViewGeneral">
+      <div class="chat-messages" id="chatMessages"><div class="chat-empty">Загрузка…</div></div>
+      <form class="chat-form" id="chatForm">
+        <button type="button" class="attach-btn" data-attach="general" title="Прикрепить файл"><svg class="ico"><use href="#i-paperclip"/></svg></button>
+        <button type="button" class="mic-btn" data-mic="chatInput" title="Голосовой ввод"><svg class="ico"><use href="#i-microphone"/></svg></button>
+        <input type="file" class="attach-input" data-attach-input="general" hidden>
+        <textarea id="chatInput" placeholder="Сообщение…" rows="1" maxlength="4000"></textarea>
+        <button type="submit" title="Отправить"><svg class="ico"><use href="#i-send"/></svg></button>
+      </form>
+    </div>
+
+    <div class="chat-view" id="chatViewProject" style="display:none">
+      <div class="project-tasks-block">
+        <div class="project-tasks-head">
+          <svg class="ico sm"><use href="#i-list-check"/></svg>
+          <span>Задачи проекта</span>
+          <button type="button" id="toggleTasksBtn" class="tasks-toggle" title="Свернуть"><svg class="ico sm"><use href="#i-chevron-down"/></svg></button>
+        </div>
+        <div id="projectTasksList" class="project-tasks-list"></div>
+        <form id="addTaskForm" class="add-task-form">
+          <input id="newTaskInput" placeholder="Новая задача…" maxlength="500" autocomplete="off">
+          <button type="submit" title="Добавить"><svg class="ico sm"><use href="#i-plus"/></svg></button>
+        </form>
+      </div>
+      <div class="chat-messages" id="projectMessages"><div class="chat-empty">Загрузка…</div></div>
+      <form class="chat-form" id="projectChatForm">
+        <button type="button" class="mic-btn" data-mic="projectChatInput" title="Голосовой ввод"><svg class="ico"><use href="#i-microphone"/></svg></button>
+        <button type="button" class="attach-btn" data-attach="project" title="Прикрепить файл"><svg class="ico"><use href="#i-paperclip"/></svg></button>
+        <input type="file" class="attach-input" data-attach-input="project" hidden>
+        <textarea id="projectChatInput" placeholder="Сообщение проекту…" rows="1" maxlength="4000"></textarea>
+        <button type="submit" title="Отправить"><svg class="ico"><use href="#i-send"/></svg></button>
+      </form>
+    </div>
+
+    <div class="chat-view" id="chatViewSupportList" style="display:none">
+      <div class="ticket-list" id="ticketList"><div class="chat-empty">Загрузка…</div></div>
+      <div class="ticket-list-actions">
+        <button id="newTicketBtn"><svg class="ico sm"><use href="#i-plus"/></svg> Создать обращение</button>
+      </div>
+    </div>
+    <div class="chat-view" id="chatViewSupportChat" style="display:none">
+      <div class="ticket-chat-header">
+        <button id="ticketBackBtn"><svg class="ico sm"><use href="#i-arrow-left"/></svg> Назад</button>
+        <span id="ticketChatTitle">Тикет</span>
+        <span id="ticketChatStatus" class="ticket-status"></span>
+      </div>
+      <div class="ticket-chat-actions" id="ticketChatActions"></div>
+      <div class="chat-messages" id="ticketMessages"></div>
+      <form class="chat-form" id="ticketForm">
+        <button type="button" class="mic-btn" data-mic="ticketInput" title="Голосовой ввод"><svg class="ico"><use href="#i-microphone"/></svg></button>
+        <button type="button" class="attach-btn" data-attach="ticket" title="Прикрепить файл"><svg class="ico"><use href="#i-paperclip"/></svg></button>
+        <input type="file" class="attach-input" data-attach-input="ticket" hidden>
+        <textarea id="ticketInput" placeholder="Сообщение…" rows="1" maxlength="4000"></textarea>
+        <button type="submit" title="Отправить"><svg class="ico"><use href="#i-send"/></svg></button>
+      </form>
+    </div>
+
+    <div class="chat-view darcus-view" id="chatViewDarcus" style="display:none">
+      <div class="darcus-chats-bar" id="darcusChatsBar">
+        <button id="darcusChatsToggle" class="darcus-chats-toggle" title="Список чатов">
+          <svg class="ico sm"><use href="#i-menu"/></svg>
+        </button>
+        <select id="darcusChatSelect" title="Выбрать чат"></select>
+        <button id="darcusChatNewBtn" title="Новый чат"><svg class="ico sm"><use href="#i-plus"/></svg></button>
+        <button id="darcusChatDelBtn" title="Удалить чат"><svg class="ico sm"><use href="#i-trash-2"/></svg></button>
+      </div>
+      <div class="darcus-head">
+        <span class="darcus-brand"><svg class="ico sm"><use href="#i-star"/></svg> Darcus</span>
+        <span class="darcus-sub" id="darcusSubBadge"></span>
+        <select id="darcusStylePreset" class="darcus-style-select" title="Стиль ответа"></select>
+      </div>
+      <div id="darcusLock" class="darcus-lock" style="display:none">
+        <p><b>Darcus</b> — встроенный ИИ-ассистент.</p>
+        <p class="hint">Доступен по подписке <b>Dark Army Intelligence</b>.</p>
+        <input id="darcusCodeInput" placeholder="DAI-XXXXX-XXXXX" maxlength="40" style="text-transform:uppercase">
+        <button id="darcusActivateBtn" class="primary">Активировать</button>
+        <p class="hint" id="darcusLockMsg"></p>
+      </div>
+      <div class="chat-messages darcus-messages" id="darcusMessages"></div>
+      <!-- ▼ Превью вложений — ПЕРЕД формой -->
+      <div id="darcusAttachPreview" class="attach-preview" style="display:none"></div>
+      <form class="chat-form" id="darcusForm">
+        <button type="button" class="mic-btn" data-mic="darcusInput" title="Голосовой ввод"><svg class="ico"><use href="#i-microphone"/></svg></button>
+        <button type="button" class="attach-btn" id="darcusAttachBtn" title="Прикрепить"><svg class="ico"><use href="#i-paperclip"/></svg></button>
+        <input type="file" id="darcusAttachInput" hidden multiple>
+        <textarea id="darcusInput" placeholder="Спросите Darcus… (Enter — отправить, Ctrl+Enter — перенос)" rows="1" maxlength="8000"></textarea>
+        <button type="submit" title="Отправить"><svg class="ico"><use href="#i-send"/></svg></button>
+      </form>
+    </div>
+
+<div id="editorModal" class="modal" style="display:none">
+  <div class="modal-inner">
+    <div class="modal-head">
+      <div class="editor-head-left">
+        <span id="editorTitle">Редактор</span>
+        <span id="editorUsers" class="editor-users" style="display:none"></span>
+      </div>
+      <div>
+        <button id="saveBtn" class="primary"><svg class="ico sm"><use href="#i-save"/></svg> <span class="hide-mobile">Сохранить</span></button>
+        <button id="cancelBtn"><svg class="ico sm"><use href="#i-x"/></svg></button>
+      </div>
+    </div>
+    <div class="editor-toolbar">
+      <button data-md="h1">H1</button>
+      <button data-md="h2">H2</button>
+      <button data-md="h3">H3</button>
+      <span class="sep"></span>
+      <button data-md="bold"><svg class="ico"><use href="#i-bold"/></svg></button>
+      <button data-md="italic"><svg class="ico"><use href="#i-italic"/></svg></button>
+      <button data-md="strike"><svg class="ico"><use href="#i-strike"/></svg></button>
+      <button data-md="code"><svg class="ico"><use href="#i-code"/></svg></button>
+      <span class="sep"></span>
+      <button data-md="ul"><svg class="ico"><use href="#i-list"/></svg></button>
+      <button data-md="ol"><svg class="ico"><use href="#i-list-ordered"/></svg></button>
+      <button data-md="quote"><svg class="ico"><use href="#i-quote"/></svg></button>
+      <span class="sep"></span>
+      <button data-md="link"><svg class="ico"><use href="#i-link"/></svg></button>
+      <button data-md="image"><svg class="ico"><use href="#i-image"/></svg></button>
+      <button data-md="table"><svg class="ico"><use href="#i-table"/></svg></button>
+      <button data-md="hr">—</button>
+      <button data-md="codeblock">{ }</button>
+      <span class="sep"></span>
+      <span class="sep"></span>
+      <button class="ai-btn" data-ai="rephrase" title="Перефразировать"><svg class="ico sm"><use href="#i-refresh"/></svg></button>
+      <button class="ai-btn" data-ai="shorten"  title="Сократить"><svg class="ico sm"><use href="#i-scissors"/></svg></button>
+      <button class="ai-btn" data-ai="fix"      title="Исправить"><svg class="ico sm"><use href="#i-check-circle"/></svg></button>
+      <button class="ai-btn" data-ai="translate" title="Перевести"><svg class="ico sm"><use href="#i-globe"/></svg></button>
+      <button id="previewToggle"><svg class="ico"><use href="#i-eye"/></svg></button>
+    </div>
+    <div class="editor-body">
+      <textarea id="editorArea" spellcheck="false"></textarea>
+      <div id="editorPreview" class="markdown-body"></div>
+    </div>
+  </div>
+</div>
+
+<div id="searchModal" class="modal" style="display:none">
+  <div class="modal-inner search-modal">
+    <div class="modal-head">
+      <span><svg class="ico sm"><use href="#i-search"/></svg> Поиск по файлам</span>
+      <button id="searchCloseBtn"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="search-body">
+      <input id="searchInput" type="text" placeholder="Имя файла или текст внутри…" autocomplete="off" maxlength="200">
+      <label class="search-all-toggle">
+        <input type="checkbox" id="searchAllProjects">
+        <span>Искать во всех проектах</span>
+      </label>
+      <div id="searchResults" class="search-results"><p class="hint">Введите минимум 2 символа</p></div>
+    </div>
+  </div>
+</div>
+
+<div id="requestModal" class="modal" style="display:none">
+  <div class="modal-inner small-modal">
+    <div class="modal-head">
+      <span><svg class="ico sm"><use href="#i-edit"/></svg> Запрос на изменение</span>
+      <button id="requestCloseBtn"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <form id="requestForm" class="simple-form">
+      <p class="hint">Файл: <b id="requestFileLabel">—</b></p>
+      <textarea name="text" rows="6" placeholder="Что нужно изменить в этом файле?" required maxlength="4000"></textarea>
+      <div class="form-actions">
+        <button type="button" id="requestCancelBtn">Отмена</button>
+        <button type="submit" class="primary"><svg class="ico sm"><use href="#i-send"/></svg> Отправить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="inboxModal" class="modal" style="display:none">
+  <div class="modal-inner">
+    <div class="modal-head">
+      <span id="inboxTitle"><svg class="ico sm"><use href="#i-clipboard"/></svg> Входящие</span>
+      <button id="inboxCloseBtn"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="inbox-tabs">
+      <button class="inbox-tab active" data-tab="requests"><svg class="ico sm"><use href="#i-edit"/></svg> Запросы</button>
+      <button class="inbox-tab" data-tab="reports" style="display:none"><svg class="ico sm"><use href="#i-warning"/></svg> Жалобы</button>
+    </div>
+    <div class="inbox-list" id="inboxList"></div>
+  </div>
+</div>
+
+<div id="reportModal" class="modal" style="display:none">
+  <div class="modal-inner small-modal">
+    <div class="modal-head">
+      <span><svg class="ico sm"><use href="#i-warning"/></svg> Жалоба администрации</span>
+      <button id="reportCloseBtn"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <form id="reportForm" class="simple-form">
+      <p class="hint">Файл: <b id="reportFileLabel">—</b></p>
+      <textarea name="reason" rows="6" placeholder="Опишите проблему" required maxlength="4000"></textarea>
+      <div class="form-actions">
+        <button type="button" id="reportCancelBtn">Отмена</button>
+        <button type="submit" class="primary"><svg class="ico sm"><use href="#i-send"/></svg> Отправить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="newTicketModal" class="modal" style="display:none">
+  <div class="modal-inner small-modal">
+    <div class="modal-head">
+      <span><svg class="ico sm"><use href="#i-clipboard"/></svg> Новое обращение</span>
+      <button id="newTicketCloseBtn"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <form id="newTicketForm" class="simple-form">
+      <p class="hint">Опишите проблему. Администраторы увидят её и ответят здесь же.</p>
+      <textarea name="text" rows="6" placeholder="Опишите проблему…" required maxlength="4000"></textarea>
+      <div class="form-actions">
+        <button type="button" id="newTicketCancelBtn">Отмена</button>
+        <button type="submit" class="primary"><svg class="ico sm"><use href="#i-send"/></svg> Отправить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="profileModal" class="modal" style="display:none">
+  <div class="modal-inner small-modal">
+    <div class="modal-head">
+      <span><svg class="ico sm"><use href="#i-user"/></svg> Профиль</span>
+      <button id="profileCloseBtn"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="simple-form">
+      <p class="hint">Логин: <b id="profileUsername">—</b><br>Роль: <b id="profileRole">—</b></p>
+      <p class="hint" id="profileSubLine">Подписка: <b id="profileSubStatus">—</b></p>
+      <div id="profileSubActivate" style="display:none;flex-direction:column;gap:6px">
+        <input type="text" id="profileSubCode" placeholder="DAI-XXXXX-XXXXX" maxlength="40" style="text-transform:uppercase;text-align:center;letter-spacing:.08em;font-family:ui-monospace,Consolas,monospace">
+        <button type="button" id="profileSubActivateBtn" class="primary">Активировать подписку</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-dim);margin-top:6px;display:none" id="profileAdsToggleWrap">
+        <input type="checkbox" id="profileShowAds" style="width:auto">
+        <span>Показывать рекламу (отладка админа)</span>
+      </label>
+      <h3 style="font-size:14px;margin-top:10px">Смена пароля</h3>
+      <form id="passwordForm" class="simple-form" style="padding:0">
+        <input type="password" name="current" placeholder="Текущий пароль" required>
+        <input type="password" name="next" placeholder="Новый пароль" required minlength="6">
+        <div class="form-actions"><button type="submit" class="primary">Сменить пароль</button></div>
+      </form>
+      <h3 style="font-size:14px;margin-top:20px;color:#ff8888">Опасная зона</h3>
+      <form id="deleteAccountForm" class="simple-form" style="padding:0">
+        <p class="hint">Удаление аккаунта необратимо.</p>
+        <input type="password" name="password" placeholder="Пароль" required>
+        <div class="form-actions"><button type="submit" class="danger-btn"><svg class="ico sm"><use href="#i-trash"/></svg> Удалить аккаунт</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="projectModal" class="modal" style="display:none">
+  <div class="modal-inner">
+    <div class="modal-head">
+      <span id="projectModalTitle"><svg class="ico sm"><use href="#i-layers"/></svg> Проект</span>
+      <button id="projectCloseBtn"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="proj-tabs" id="projectTabs">
+      <button class="proj-tab active" data-tab="members"><svg class="ico sm"><use href="#i-users"/></svg> Участники</button>
+      <button class="proj-tab" data-tab="settings"><svg class="ico sm"><use href="#i-settings"/></svg> Настройки</button>
+      <button class="proj-tab" data-tab="activity" style="display:none"><svg class="ico sm"><use href="#i-clock"/></svg> Последние действия</button>
+    </div>
+    <div class="proj-body" id="projectBody"></div>
+  </div>
+</div>
+
+<div id="newProjectModal" class="modal" style="display:none">
+  <div class="modal-inner small-modal">
+    <div class="modal-head">
+      <span><svg class="ico sm"><use href="#i-plus"/></svg> Новый проект</span>
+      <button id="newProjectCloseBtn"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <form id="newProjectForm" class="simple-form">
+      <input name="name" placeholder="Название проекта" required maxlength="100">
+      <p class="hint">Вы станете создателем (creator) и сможете приглашать участников.</p>
+      <div class="form-actions">
+        <button type="button" id="newProjectCancelBtn">Отмена</button>
+        <button type="submit" class="primary"><svg class="ico sm"><use href="#i-check"/></svg> Создать</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="punishModal" class="modal" style="display:none">
+  <div class="modal-inner small-modal">
+    <div class="modal-head">
+      <span id="punishTitle"><svg class="ico sm"><use href="#i-gavel"/></svg> Наказание</span>
+      <button id="punishCloseBtn"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <form id="punishForm" class="simple-form">
+      <input type="hidden" name="type">
+      <input type="hidden" name="username">
+      <p class="hint" id="punishTarget">Пользователь: —</p>
+      <label>Срок:
+        <select name="duration">
+          <option value="3600000">1 час</option>
+          <option value="86400000">24 часа</option>
+          <option value="604800000">7 дней</option>
+          <option value="2592000000">30 дней</option>
+          <option value="forever">Навсегда</option>
+        </select>
+      </label>
+      <input name="reason" placeholder="Причина (необязательно)" maxlength="500">
+      <div class="form-actions">
+        <button type="button" id="punishCancelBtn">Отмена</button>
+        <button type="submit" class="danger-btn" id="punishSubmit"><svg class="ico sm"><use href="#i-gavel"/></svg> Применить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="moveModal" class="modal" style="display:none">
+  <div class="modal-inner small-modal simple-form">
+    <div class="modal-head">
+      <span><svg class="ico sm"><use href="#i-folder"/></svg> Переместить в…</span>
+      <button id="moveCloseBtn"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="move-body">
+      <p class="hint" id="moveSource">Перемещаем: —</p>
+      <div id="moveTree" class="move-tree"></div>
+    </div>
+    <div class="form-actions move-actions">
+      <button type="button" id="moveCancelBtn">Отмена</button>
+      <button type="button" id="moveConfirmBtn" class="primary" disabled>Переместить сюда</button>
+    </div>
+  </div>
+</div>
+
+<div id="darcusGenModal" class="modal" style="display:none">
+  <div class="modal-inner small-modal">
+    <div class="modal-head">
+      <span><svg class="ico sm"><use href="#i-star"/></svg> Генерация документа — Darcus</span>
+      <button id="darcusGenCloseBtn"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <form id="darcusGenForm" class="simple-form">
+      <input name="name" placeholder="Имя файла (.md)" required maxlength="80">
+      <textarea name="prompt" rows="5" placeholder="Опишите, какой документ нужен…" required maxlength="2000"></textarea>
+      <label>Шаблон:
+        <select name="template">
+          <option value="">Свободный</option>
+          <option value="readme">README</option>
+          <option value="meeting">Протокол встречи</option>
+          <option value="checklist">Чек-лист</option>
+          <option value="report">Отчёт</option>
+          <option value="note">Заметка</option>
+        </select>
+      </label>
+      <p class="hint">Доступно по подписке Dark Army Intelligence.</p>
+      <div class="form-actions">
+        <button type="button" id="darcusGenCancelBtn">Отмена</button>
+        <button type="submit" class="primary">Сгенерировать</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="ctxMenu" class="ctx-menu" style="display:none"></div>
+<div id="punishMenu" class="punish-menu" style="display:none"></div>
+
+<div id="lightboxModal" class="lightbox" style="display:none">
+  <button id="lightboxClose" class="lightbox-close" title="Закрыть">
+    <svg class="ico xl"><use href="#i-x"/></svg>
+  </button>
+  <img id="lightboxImg" src="" alt="">
+</div>
+
+<script src="js/ui-dialog.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

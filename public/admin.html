@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Админ-панель — DarkArmy Dossier</title>
+<meta name="theme-color" content="#0a0b0f">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5 L19.5 5.5 V11.5 C19.5 16.5 16.2 20.2 12 21.5 C7.8 20.2 4.5 16.5 4.5 11.5 V5.5 Z' stroke='%23e63946' stroke-width='1.6' fill='none'/%3E%3Cpath d='M9 11.7 L11 13.7 L15.2 9.5' stroke='%23e63946' stroke-width='1.8' fill='none'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+<symbol id="i-clipboard" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></symbol>
+<symbol id="i-gavel" viewBox="0 0 24 24"><path d="M14 4l6 6-3 3-6-6zM3 21l9-9M9 5l-6 6 3 3 6-6zM21 15l-4 4"/></symbol>
+<symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></symbol>
+<symbol id="i-volume-x" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M23 9l-6 6M17 9l6 6"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></symbol>
+<symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><path d="M21 2l-2 2"/><circle cx="8" cy="15" r="5"/><path d="M11.5 11.5L22 1M18 5l2 2"/></symbol>
+<symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+<symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+<symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a2 2 0 0 0 0-4z"/></symbol>
+<symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+<symbol id="i-crown" viewBox="0 0 24 24"><path d="M2 18l3-9 5 5 2-7 2 7 5-5 3 9z"/><path d="M2 22h20"/></symbol>
+<symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+<symbol id="i-check-circle" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></symbol>
+<symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></symbol>
+</defs></svg>
+
+<header id="topbar">
+  <div class="brand">
+    <svg class="logo" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2.5 L19.5 5.5 V11.5 C19.5 16.5 16.2 20.2 12 21.5 C7.8 20.2 4.5 16.5 4.5 11.5 V5.5 Z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
+      <path d="M9 11.7 L11 13.7 L15.2 9.5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span class="brand-text">DarkArmy <span class="brand-accent">Dossier</span> · Админ</span>
+  </div>
+  <div class="user">
+    <span id="userLabel"></span>
+    <button id="themeBtn" title="Тема"><svg class="ico"><use href="#i-moon"/></svg></button>
+    <a href="/"><svg class="ico"><use href="#i-arrow-left"/></svg> К файлам</a>
+    <button id="logoutBtn"><svg class="ico"><use href="#i-logout"/></svg> Выйти</button>
+  </div>
+</header>
+
+<div class="admin-tabs">
+  <button class="tab active" data-tab="users"><svg class="ico sm"><use href="#i-users"/></svg> Пользователи</button>
+  <button class="tab" data-tab="invites"><svg class="ico sm"><use href="#i-key"/></svg> Приглашения</button>
+  <button class="tab" data-tab="punishments"><svg class="ico sm"><use href="#i-gavel"/></svg> Наказания</button>
+  <button class="tab" data-tab="changes"><svg class="ico sm"><use href="#i-clipboard"/></svg> Журнал</button>
+  <button class="tab" data-tab="settings"><svg class="ico sm"><use href="#i-settings"/></svg> Настройки</button>
+  <button class="tab" data-tab="darcus" id="darcusTab" style="display:none"><svg class="ico sm"><use href="#i-star"/></svg> Darcus</button>
+  <button class="tab" data-tab="ads" id="adsTab" style="display:none"><svg class="ico sm"><use href="#i-monitor"/></svg> Реклама</button>
+  <button class="tab" data-tab="subs" id="subsTab" style="display:none"><svg class="ico sm"><use href="#i-crown"/></svg> Подписки</button>
+  <button class="tab" data-tab="telemetry" id="telemetryTab" style="display:none"><svg class="ico sm"><use href="#i-monitor"/></svg> Телеметрия</button>
+</div>
+
+<section id="tab-users" class="tab-panel">
+  <h2>Создать пользователя</h2>
+  <form id="createUserForm" class="inline-form">
+    <input name="username" placeholder="Логин (3–64)" required minlength="3" maxlength="64">
+    <input name="password" type="password" placeholder="Пароль (мин. 6)" required minlength="6">
+    <select name="role">
+      <option value="member">Участник</option>
+      <option value="admin">Администратор</option>
+    </select>
+    <button type="submit" class="primary"><svg class="ico sm"><use href="#i-plus"/></svg> Создать</button>
+  </form>
+  <p class="hint">Пользователи, созданные здесь, не требуют код приглашения.</p>
+  <h2>Пользователи</h2>
+  <div class="filters">
+    <input id="usersSearch" placeholder="Поиск по логину или роли…" style="flex:1;max-width:400px">
+    <span id="usersCount" class="hint"></span>
+  </div>
+  <table id="usersTable">
+    <thead><tr><th>Логин</th><th>Роль</th><th>Создан</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<section id="tab-invites" class="tab-panel" style="display:none">
+  <h2>Сгенерировать коды</h2>
+  <form id="genInviteForm" class="inline-form">
+    <label>Количество:
+      <input type="number" name="count" min="1" max="50" value="1" required style="width:100px">
+    </label>
+    <input name="note" placeholder="Заметка (необязательно)" maxlength="200" style="flex:1;min-width:200px">
+    <button type="submit" class="primary"><svg class="ico sm"><use href="#i-refresh"/></svg> Сгенерировать</button>
+  </form>
+
+  <h2>Добавить вручную</h2>
+  <form id="manualInviteForm" class="inline-form">
+    <input name="code" placeholder="Код (A–Z, 0–9, - _)" required minlength="4" maxlength="64"
+           style="text-transform:uppercase;letter-spacing:.05em">
+    <input name="note" placeholder="Заметка" maxlength="200" style="flex:1;min-width:200px">
+    <button type="submit" class="primary"><svg class="ico sm"><use href="#i-plus"/></svg> Добавить</button>
+  </form>
+
+  <h2>Все коды</h2>
+  <div class="filters">
+    <input id="invitesSearch" placeholder="Поиск по коду / заметке / логину…" style="flex:1;max-width:400px">
+    <select id="invitesFilter">
+      <option value="">Все</option>
+      <option value="free">Свободные</option>
+      <option value="used">Использованные</option>
+    </select>
+    <span id="invitesCount" class="hint"></span>
+    <button id="refreshInvites"><svg class="ico sm"><use href="#i-refresh"/></svg> Обновить</button>
+  </div>
+  <table id="invitesTable">
+    <thead>
+      <tr>
+        <th>Код</th>
+        <th>Заметка</th>
+        <th>Создан</th>
+        <th>Статус</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<section id="tab-punishments" class="tab-panel" style="display:none">
+  <h2>Активные наказания</h2>
+  <div class="filters">
+    <button id="refreshPunishments"><svg class="ico sm"><use href="#i-refresh"/></svg> Обновить</button>
+  </div>
+  <div id="punishmentsList"></div>
+</section>
+
+<section id="tab-changes" class="tab-panel" style="display:none">
+  <h2>Изменения</h2>
+  <div class="filters">
+    <label>Период:
+      <select id="daysFilter">
+        <option value="1">1 день</option>
+        <option value="7" selected>7 дней</option>
+        <option value="30">30 дней</option>
+        <option value="">Всё время</option>
+      </select>
+    </label>
+    <label>Файл: <input id="fileFilter" placeholder="путь/к/файлу.md"></label>
+    <button id="refreshChanges"><svg class="ico sm"><use href="#i-refresh"/></svg> Обновить</button>
+  </div>
+  <div id="changesList"></div>
+</section>
+
+<section id="tab-settings" class="tab-panel" style="display:none">
+  <h2>Настройки загрузки файлов</h2>
+  <form id="settingsForm" class="inline-form">
+    <label>Лимит для участников (МБ):
+      <input type="number" name="uploadLimitMB" min="1" max="100000" required>
+    </label>
+    <button type="submit" class="primary">Сохранить</button>
+  </form>
+  <p class="hint">Для администраторов лимит не применяется.</p>
+
+  <h2 style="margin-top:24px">Общий чат</h2>
+  <form id="chatSettingsForm" class="inline-form">
+    <label>Кто может писать в общий чат:
+      <select name="generalChatMode">
+        <option value="everyone">Все пользователи</option>
+        <option value="admins_only">Только администраторы</option>
+      </select>
+    </label>
+    <button type="submit" class="primary">Сохранить</button>
+  </form>
+  <p class="hint">«Только администраторы» — блокирует отправку в общий чат всем, кроме админов. На проектный чат и поддержку не влияет.</p>
+</section>
+
+<!-- DARCUS -->
+<section id="tab-darcus" class="tab-panel" style="display:none">
+  <h2>Настройки Darcus (Ollama)</h2>
+  <p class="hint">Доступно только пользователю с логином <b>admin</b>.</p>
+  <form id="darcusOllamaForm" class="inline-form" style="flex-direction:column;align-items:stretch;gap:10px">
+    <label style="display:flex;gap:8px;align-items:center">
+      <span style="min-width:160px">URL Ollama:</span>
+      <input name="url" style="flex:1" placeholder="http://localhost:11434">
+    </label>
+    <label style="display:flex;gap:8px;align-items:center">
+      <span style="min-width:160px">Модель чата:</span>
+      <input name="chatModel" list="darcusModels" style="flex:1" placeholder="llama3.1:8b">
+    </label>
+    <label style="display:flex;gap:8px;align-items:center">
+      <span style="min-width:160px">Vision/OCR:</span>
+      <input name="visionModel" list="darcusModels" style="flex:1" placeholder="qwen2-vl:7b">
+    </label>
+    <label style="display:flex;gap:8px;align-items:center">
+      <span style="min-width:160px">Embeddings:</span>
+      <input name="embedModel" list="darcusModels" style="flex:1" placeholder="nomic-embed-text">
+    </label>
+    <label style="display:flex;gap:8px;align-items:center">
+      <span style="min-width:160px">Reranker (опц.):</span>
+      <input name="rerankModel" list="darcusModels" style="flex:1" placeholder="bge-reranker-v2-m3 (пусто = лексический)">
+    </label>
+    <label style="display:flex;gap:8px;align-items:center">
+      <span style="min-width:160px">num_ctx:</span>
+      <input name="numCtx" type="number" min="512" max="32768" style="width:120px">
+    </label>
+    <label style="display:flex;gap:8px;align-items:center">
+      <span style="min-width:160px">temperature:</span>
+      <input name="temperature" type="number" step="0.1" min="0" max="2" style="width:120px">
+    </label>
+    <label style="display:flex;gap:8px;align-items:center">
+      <span style="min-width:160px">Timeout (мс):</span>
+      <input name="timeout" type="number" min="1000" max="600000" style="width:150px">
+    </label>
+    <datalist id="darcusModels"></datalist>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="submit" class="primary"><svg class="ico sm"><use href="#i-check"/></svg> Сохранить</button>
+      <button type="button" id="darcusTestBtn" class="secondary-btn"><svg class="ico sm"><use href="#i-zap"/></svg> Проверить связь</button>
+      <button type="button" id="darcusLoadModelsBtn" class="secondary-btn"><svg class="ico sm"><use href="#i-refresh"/></svg> Загрузить модели</button>
+      <button type="button" id="darcusReindexBtn" class="secondary-btn" title="Проиндексировать все проекты для семантического поиска"><svg class="ico sm"><use href="#i-refresh"/></svg> Переиндексировать </button>
+    </div>
+    <p class="hint" id="darcusTestMsg"></p>
+  </form>
+
+  <h2 style="margin-top:24px">Промпты</h2>
+  <p class="hint">Подстановки: <code>{username}</code> <code>{role}</code> <code>{project}</code> <code>{file}</code> <code>{date}</code> <code>{time}</code> <code>{lang}</code> <code>{context}</code> <code>{query}</code> <code>{history}</code> <code>{text}</code> <code>{prompt}</code> <code>{template}</code></p>
+  <form id="darcusPromptsForm" class="simple-form" style="padding:0">
+    <label>system<textarea name="system" rows="5"></textarea></label>
+    <label>chat<textarea name="chat" rows="8"></textarea></label>
+    <label>rephrase<textarea name="rephrase" rows="4"></textarea></label>
+    <label>shorten<textarea name="shorten" rows="4"></textarea></label>
+    <label>fix<textarea name="fix" rows="4"></textarea></label>
+    <label>translate<textarea name="translate" rows="4"></textarea></label>
+    <label>summarize<textarea name="summarize" rows="6"></textarea></label>
+    <label>generate_doc<textarea name="generate_doc" rows="6"></textarea></label>
+    <label>ocr<textarea name="ocr" rows="3"></textarea></label>
+    <label>vision<textarea name="vision" rows="6"></textarea></label>
+    <label>template_readme<textarea name="template_readme" rows="2"></textarea></label>
+    <label>template_meeting<textarea name="template_meeting" rows="2"></textarea></label>
+    <label>template_checklist<textarea name="template_checklist" rows="2"></textarea></label>
+    <label>template_report<textarea name="template_report" rows="2"></textarea></label>
+    <label>template_note<textarea name="template_note" rows="2"></textarea></label>
+    <div class="form-actions">
+      <button type="submit" class="primary">Сохранить промпты</button>
+    </div>
+  </form>
+</section>
+
+<!-- ADS -->
+<section id="tab-ads" class="tab-panel" style="display:none">
+  <h2>Слоты рекламы</h2>
+  <p class="hint">Включайте/выключайте слоты и настраивайте интервал ротации (секунды).</p>
+  <div id="adsSlotsList"></div>
+
+  <h2 style="margin-top:20px">Загрузка картинок</h2>
+  <form id="adsUploadForm" class="inline-form">
+    <input type="file" name="file" accept="image/*" required>
+    <button type="submit" class="primary"><svg class="ico sm"><use href="#i-plus"/></svg> Загрузить</button>
+    <span class="hint" id="adsCount">0</span>
+  </form>
+  <p class="hint">Картинки раскидываются равномерно по всем включённым слотам (round-robin).</p>
+
+  <h2 style="margin-top:20px">Загруженные картинки</h2>
+  <div id="adsGrid" class="ads-grid"></div>
+
+  <h2 style="margin-top:20px">Распределение</h2>
+  <div id="adsDistribution" class="ads-dist-list"></div>
+</section>
+
+<!-- SUBS -->
+<section id="tab-subs" class="tab-panel" style="display:none">
+  <h2>Подписки Dark Army Intelligence</h2>
+  <p class="hint">Подписка даёт доступ к функциям Darcus: чат, редактор, генерация документов, RAG, OCR-панель, анализ изображений.</p>
+
+  <div class="filters">
+    <button id="refreshSubs"><svg class="ico sm"><use href="#i-refresh"/></svg> Обновить</button>
+  </div>
+
+  <h3 class="subs-h">Активные</h3>
+  <table id="subsTable" class="data-table">
+    <thead><tr><th>Логин</th><th>До</th><th>Выдал</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <h3 class="subs-h">Выдать вручную</h3>
+  <form id="subsGrantForm" class="inline-form">
+    <input name="username" placeholder="Логин" required>
+    <input name="days" type="number" min="1" value="30" style="width:100px" required>
+    <input name="note" placeholder="Заметка" style="flex:1">
+    <button type="submit" class="primary"><svg class="ico sm"><use href="#i-plus"/></svg> Выдать</button>
+  </form>
+
+  <h3 class="subs-h">Коды активации</h3>
+  <form id="subsCodesForm" class="inline-form">
+    <input name="count" type="number" min="1" max="50" value="1" style="width:100px" required placeholder="Кол-во">
+    <input name="days" type="number" min="1" value="30" style="width:100px" required placeholder="Дней">
+    <input name="note" placeholder="Заметка" style="flex:1">
+    <button type="submit" class="primary"><svg class="ico sm"><use href="#i-refresh"/></svg> Сгенерировать</button>
+  </form>
+  <table id="subsCodesTable" class="data-table" style="margin-top:12px">
+    <thead><tr><th>Код</th><th>Дней</th><th>Создан</th><th>Статус</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<section id="tab-telemetry" class="tab-panel" style="display:none">
+  <h2>Телеметрия пользователей</h2>
+  <p class="hint">Раздел доступен только пользователю с логином <b>admin</b>.</p>
+  <div class="filters">
+    <input id="telemetrySearch" placeholder="Поиск пользователя…" style="flex:1;max-width:400px">
+    <button id="refreshTelemetry"><svg class="ico sm"><use href="#i-refresh"/></svg> Обновить</button>
+  </div>
+  <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+    <div style="flex:1;min-width:220px;max-width:340px">
+      <h3 style="font-size:14px;margin:8px 0">Пользователи</h3>
+      <div id="telemetryUsers" class="telemetry-users"></div>
+    </div>
+    <div style="flex:2;min-width:280px">
+      <h3 style="font-size:14px;margin:8px 0">События</h3>
+      <div id="telemetryEvents" class="telemetry-events">
+        <p class="hint">Выберите пользователя слева</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="ctxMenu" class="ctx-menu" style="display:none"></div>
+<div id="punishMenu" class="punish-menu" style="display:none"></div>
+<div id="punishModal" class="modal" style="display:none">
+  <div class="modal-inner small-modal">
+    <div class="modal-head">
+      <span id="punishTitle"><svg class="ico sm"><use href="#i-gavel"/></svg> Наказание</span>
+      <button id="punishCloseBtn"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <form id="punishForm" class="simple-form">
+      <input type="hidden" name="type">
+      <input type="hidden" name="username">
+      <p class="hint" id="punishTarget">Пользователь: —</p>
+      <label>Срок:
+        <select name="duration">
+          <option value="3600000">1 час</option>
+          <option value="86400000">24 часа</option>
+          <option value="604800000">7 дней</option>
+          <option value="2592000000">30 дней</option>
+          <option value="forever">Навсегда</option>
+        </select>
+      </label>
+      <input name="reason" placeholder="Причина" maxlength="500">
+      <div class="form-actions">
+        <button type="button" id="punishCancelBtn">Отмена</button>
+        <button type="submit" class="danger-btn" id="punishSubmit"><svg class="ico sm"><use href="#i-gavel"/></svg> Применить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="js/ui-dialog.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
