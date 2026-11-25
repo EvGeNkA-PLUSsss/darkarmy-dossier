@@ -22,7 +22,10 @@ const TEXT_PLAIN_EXT = new Set([
 function safeJoin(root, rel) {
   if (typeof rel !== 'string') throw new Error('bad path');
   if (rel.includes('\0')) throw new Error('bad path');
-  const full = path.resolve(root, rel.replace(/^\/+/, ''));
+  // API использует только '/' как разделитель. Windows-разделители нормализуем,
+  // чтобы traversal вроде "..\\outside.txt" блокировался на любой ОС.
+  const normalized = rel.replace(/\\/g, '/');
+  const full = path.resolve(root, normalized.replace(/^\/+/, ''));
   if (full !== root && !full.startsWith(root + path.sep)) throw new Error('forbidden');
   return full;
 }
@@ -44,8 +47,15 @@ function decodeUploadFilename(name) {
 }
 
 function safeFileName(name) {
-  return path.basename(String(name || 'file'))
-    .replace(/[<>:"|?*\x00-\x1f\/\\]/g, '_').slice(0, 200) || 'file';
+  // Приводим оба типа разделителей: на Linux обратный слэш не является
+  // разделителем, из-за чего "../../evil.txt" превращался в ".._.._evil.txt".
+  const base = path.basename(String(name || 'file').replace(/\\/g, '/'));
+  const cleaned = base
+    .replace(/[<>:"|?*\x00-\x1f]/g, '_')
+    .replace(/[. ]+$/g, '')
+    .slice(0, 200);
+  if (!cleaned || cleaned === '.' || cleaned === '..') return 'file';
+  return cleaned;
 }
 
 function isImageMime(mime, name) {

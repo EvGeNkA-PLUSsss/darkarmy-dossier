@@ -117,7 +117,11 @@ test('бэкап из админки создаёт копию и возвращ
   assert.equal(body.ok, true);
   assert.ok(Array.isArray(body.backups) && body.backups.length >= 1);
   assert.ok(body.backups[0].sizeBytes > 0);
-  assert.ok(fs.existsSync(path.join(process.env.BACKUP_DIR, body.backups[0].name, 'manifest.json')));
+  const backupDir = path.join(process.env.BACKUP_DIR, body.backups[0].name);
+  assert.ok(fs.existsSync(path.join(backupDir, 'manifest.json')));
+  // Бэкап должен брать данные тестового окружения (DATA_DIR), а не реальный data/.
+  assert.ok(fs.existsSync(path.join(backupDir, 'dossier.db')), 'в бэкапе нет dossier.db');
+  assert.ok(fs.existsSync(path.join(backupDir, 'data')), 'в бэкапе нет data/');
 });
 
 test('загрузка .shtml хранится как text/plain и не исполняется', async () => {

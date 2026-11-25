@@ -32,7 +32,8 @@ function arg(name, def) {
 }
 
 (async () => {
-  const env = loadEnvFile();
+  // Явные переменные окружения приоритетнее .env (важно для тестов и CI).
+  const env = { ...loadEnvFile(), ...process.env };
   const dataDir = path.resolve(env.DATA_DIR || path.join(ROOT, 'data'));
   const projectsRoot = path.resolve(arg('projects-root', env.PROJECTS_ROOT || 'F:/Проекты'));
   const keep = Math.max(1, parseInt(arg('keep', '7'), 10) || 7);
@@ -66,8 +67,12 @@ function arg(name, def) {
       else fs.copyFileSync(s, d);
     }
   };
-  copyDir(dataDir, path.join(dest, 'data'));
-  console.log('OK  data/');
+  if (!fs.existsSync(dataDir)) {
+    console.log('WARN каталог данных не найден: ' + dataDir + ' — пропускаю data/');
+  } else {
+    copyDir(dataDir, path.join(dest, 'data'));
+    console.log('OK  data/');
+  }
 
   // 3) Файлы проектов.
   if (withProjects) {

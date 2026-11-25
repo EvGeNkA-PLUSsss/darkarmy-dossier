@@ -65,8 +65,13 @@ module.exports = function createSystemRouter(deps) {
     execFile(process.execPath, args, { cwd: paths.rootDir, timeout: 180000, maxBuffer: 4 * 1024 * 1024 },
       (err, stdout, stderr) => {
         if (err) {
-          logger.error({ err: err.message, stderr: String(stderr).slice(0, 2000) }, 'backup failed');
-          return res.status(500).json({ ok: false, error: (String(stderr).trim().split('\n').pop()) || err.message });
+          const stderrText = String(stderr || '').trim();
+          const lines = stderrText.split('\n').map(l => l.trim()).filter(l => l && l !== '}');
+          // Последняя строка стека обычно "}", поэтому ищем содержательную.
+          const detail = lines.find(l => /(Error|ENOENT|SQLITE|не удался|denied|no such)/i.test(l))
+            || lines[lines.length - 1] || err.message;
+          logger.error({ err: err.message, detail, stderr: stderrText.slice(0, 2000) }, 'backup failed');
+          return res.status(500).json({ ok: false, error: detail });
         }
         logChange({ user: req.user.username, action: 'backup', details: includeProjects ? 'с проектами' : 'только метаданные' });
         res.json({ ok: true, output: String(stdout).trim().split('\n').slice(-6), backups: util.listBackups(paths.backupDir) });

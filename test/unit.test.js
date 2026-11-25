@@ -31,6 +31,7 @@ test('safeJoin: блокирует traversal, абсолютные пути и N
   fs.mkdirSync(root, { recursive: true });
   assert.throws(() => safeJoin(root, '../outside.txt'));
   assert.throws(() => safeJoin(root, '..\\outside.txt'));
+  assert.throws(() => safeJoin(root, 'a\\..\\..\\outside.txt'));
   assert.throws(() => safeJoin(root, 'a/../../outside.txt'));
   assert.throws(() => safeJoin(root, '\0evil'));
   // абсолютный путь внутри root остаётся внутри root (не выходит наружу)
@@ -73,6 +74,9 @@ test('decodeUploadFilename: latin1-UTF8 из multipart', () => {
 
 test('safeFileName: вырезает опасные символы и пути', () => {
   assert.equal(safeFileName('..\\..\\evil.txt'), 'evil.txt');
+  assert.equal(safeFileName('../../evil.txt'), 'evil.txt');
+  assert.equal(safeFileName('C:\\temp\\file.md'), 'file.md');
   assert.equal(safeFileName('a<b>c.txt'), 'a_b_c.txt');
   assert.equal(safeFileName(''), 'file');
+  assert.equal(safeFileName('..'), 'file');
 });
