@@ -133,6 +133,7 @@ data/              SQLite-БД, JSON-архив, вложения (не комм
 ## Документация
 
 - [Аудит и план развития](../DARKARMY_ROADMAP.md)
+- [Приёмка production-готовности](../DARKARMY_ACCEPTANCE.md)
 - [.env.example](.env.example)
 
 ## Лицензия
