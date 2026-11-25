@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const extractor = require('./extract-text');
 const appCfg = require('./config');                     // [FIX] whisper/tts env
 
-const DATA_DIR       = path.join(__dirname, 'data');
+const DATA_DIR       = appCfg.dataDir;
 const AI_CONFIG_FILE = path.join(DATA_DIR, 'ai-config.json');
 const OCR_CACHE_FILE = path.join(DATA_DIR, 'ocr-cache.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });

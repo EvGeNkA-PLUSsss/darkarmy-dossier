@@ -16,6 +16,7 @@ const extractor = require('./extract-text');
 // [SEC][NEW] Конфиг и логгер
 const cfg = require('./config');
 const { logger, writeAccessLog, LOG_FILE } = require('./logger');
+const storage = require('./src/storage');
 
 const app = express();
 const PORT = cfg.port;
@@ -31,7 +32,6 @@ const CHAT_FILE          = path.join(DATA_DIR, 'chat.json');
 const REQUESTS_FILE      = path.join(DATA_DIR, 'requests.json');
 const REPORTS_FILE       = path.join(DATA_DIR, 'reports.json');
 const TICKETS_FILE       = path.join(DATA_DIR, 'tickets.json');
-const TELEMETRY_DIR      = path.join(DATA_DIR, 'telemetry');
 const PROJECTS_FILE      = path.join(DATA_DIR, 'projects.json');
 const PUNISHMENTS_FILE   = path.join(DATA_DIR, 'punishments.json');
 const PROJECT_CHATS_FILE = path.join(DATA_DIR, 'project-chats.json');
@@ -48,9 +48,12 @@ const TRASH_RETENTION_DAYS = cfg.limits.trashRetentionDays;
 const PROJECT_META_FILE  = path.join(DATA_DIR, 'project-meta.json');   // [NEW]
 
 for (const d of [ADS_DIR]) if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
-for (const d of [DATA_DIR, PROJECTS_ROOT, TMP_DIR, TELEMETRY_DIR, ATTACH_DIR]) {
+for (const d of [DATA_DIR, PROJECTS_ROOT, TMP_DIR, ATTACH_DIR]) {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
+// Метаданные (пользователи, проекты, журнал, телеметрия, сессии) — в SQLite.
+// При первом запуске сюда переносятся JSON-файлы (они остаются как архив).
+storage.init({ dir: DATA_DIR });
 try { for (const f of fs.readdirSync(TMP_DIR)) fs.unlinkSync(path.join(TMP_DIR, f)); } catch {}
 
 const TEXT_EXT = ['md','markdown','txt','js','json','css','html','xml','csv','log','yml','yaml','ts','sh','env','ini','conf'];
@@ -120,37 +123,38 @@ function saveJSON(file, data) {
   }
 }
 
-/* ---------- Пользователи ---------- */
+/* ---------- Пользователи (SQLite) ---------- */
 let usersCache = null;
 function loadUsers() {
   if (usersCache) return usersCache;
-  if (!fs.existsSync(USERS_FILE)) {
+  const list = storage.getUsers();
+  if (!list.length) {
     // Первый запуск: пароль берём из ADMIN_PASSWORD, иначе генерируем случайный.
     // Пароль печатаем ТОЛЬКО в консоль (не в data/log.txt).
     const tempPassword = cfg.admin.initialPassword || crypto.randomBytes(12).toString('base64url');
-    const initial = { users: [{
+    const admin = {
       id: crypto.randomUUID(), username: cfg.admin.username,
       password: bcrypt.hashSync(tempPassword, 10),
       role: 'admin', theme: 'dark', mustChangePassword: true,
       createdAt: new Date().toISOString()
-    }]};
-    atomicWriteFile(USERS_FILE, JSON.stringify(initial, null, 2));
+    };
+    storage.replaceUsers([admin]);
     console.warn('[bootstrap] Создан администратор "' + cfg.admin.username + '". Пароль: ' + tempPassword + ' — смените его после первого входа.');
-    usersCache = initial;
-    return initial;
+    usersCache = { users: [admin] };
+    return usersCache;
   }
-  usersCache = loadJSON(USERS_FILE, { users: [] });
-  if (!Array.isArray(usersCache.users)) usersCache.users = [];
+  usersCache = { users: list };
   return usersCache;
 }
 const saveUsers = d => {
-  saveJSON(USERS_FILE, d);
+  storage.replaceUsers(d.users);
   usersCache = null;
 };
 
-/* ---------- Журнал ---------- */
-const loadChanges = () => loadJSON(CHANGES_FILE, { entries: [] });
-const saveChanges = d => saveJSON(CHANGES_FILE, d);
+/* ---------- Журнал (SQLite) ---------- */
+const loadChanges = () => ({ entries: storage.listAllChanges() });
+// Устаревший API: журнал теперь append-only в БД, полная перезапись не нужна.
+const saveChanges = () => {};
 
 // [SEC] Расширенный список чувствительных имён + уменьшенный лимит
 const SENSITIVE_FILE_RE = /(^|[\\/])(\.env(\..*)?|.*\.(pem|key|pfx|p12|kdbx)|id_(rsa|dsa|ecdsa|ed25519).*|.*secret.*|.*credentials.*|.*password.*|config\.json|settings\.json|users\.json|subscriptions\.json|shares\.json|invites\.json)$/i;
@@ -169,10 +173,7 @@ function redactChangeContent(entry) {
 }
 
 function logChange(entry) {
-  const data = loadChanges();
-  data.entries.push({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), ...redactChangeContent(entry) });
-  if (data.entries.length > cfg.limits.logMaxEntries) data.entries = data.entries.slice(-cfg.limits.logMaxEntries);
-  saveChanges(data);
+  return storage.appendChange(redactChangeContent(entry));
 }
 
 /* ---------- Настройки ---------- */
@@ -247,28 +248,28 @@ function purgeExpiredTrash() {
 // [NEW] Удаление своего сообщения из общего чата.
 // Админ может удалить любое. SSE-событие chat-delete синхронизирует всех.
 
-/* ---------- Проекты ---------- */
+/* ---------- Проекты (SQLite) ---------- */
 let projectsCache = null;
 function loadProjects() {
   if (projectsCache) return projectsCache;
-  if (!fs.existsSync(PROJECTS_FILE)) {
-    const def = { projects: [{
+  const list = storage.getProjects();
+  if (!list.length) {
+    const def = {
       id: 'default', name: 'Основной', folder: 'default', creator: cfg.admin.username,
       members: [{ username: cfg.admin.username, role: 'creator' }],
       createdAt: new Date().toISOString()
-    }]};
-    atomicWriteFile(PROJECTS_FILE, JSON.stringify(def, null, 2));
+    };
+    storage.replaceProjects([def]);
     if (!fs.existsSync(path.join(PROJECTS_ROOT, 'default')))
       fs.mkdirSync(path.join(PROJECTS_ROOT, 'default'), { recursive: true });
-    projectsCache = def;
-    return def;
+    projectsCache = { projects: [def] };
+    return projectsCache;
   }
-  projectsCache = loadJSON(PROJECTS_FILE, { projects: [] });
-  if (!Array.isArray(projectsCache.projects)) projectsCache.projects = [];
+  projectsCache = { projects: list };
   return projectsCache;
 }
 const saveProjects = d => {
-  saveJSON(PROJECTS_FILE, d);
+  storage.replaceProjects(d.projects);
   projectsCache = null;
 };
 
@@ -374,35 +375,16 @@ function isImageMime(mime, name) {
   return ['png','jpg','jpeg','gif','webp','bmp','svg','ico'].includes(ext);
 }
 
-/* ---------- Телеметрия ----------
-   Раньше файл на каждого пользователя читался/парсился/писался на КАЖДЫЙ
-   авторизованный запрос (до 5,6 мс блокировки event loop). Теперь события
-   копятся в памяти и сбрасываются пачкой раз в telemetryFlushMs. */
+/* ---------- Телеметрия (SQLite, батчами) ---------- */
 const telemetryQueue = new Map(); // username -> { events: [] }
 let telemetryFlushTimer = null;
-
-function telemetryPath(username) {
-  const safe = String(username).replace(/[^\w.\-@]/g, '_');
-  return path.join(TELEMETRY_DIR, safe + '.json');
-}
 
 function flushTelemetry() {
   if (telemetryFlushTimer) { clearTimeout(telemetryFlushTimer); telemetryFlushTimer = null; }
   for (const [username, rec] of telemetryQueue) {
     if (!rec.events.length) continue;
-    const file = telemetryPath(username);
-    try {
-      let data;
-      if (fs.existsSync(file)) data = loadJSON(file, {});
-      if (!data || !Array.isArray(data.events)) data = { username, firstSeen: new Date().toISOString(), events: [] };
-      data.events.push(...rec.events);
-      const max = cfg.limits.telemetryMaxEvents;
-      if (data.events.length > max) data.events = data.events.slice(-max);
-      data.lastSeen = new Date().toISOString();
-      atomicWriteFile(file, JSON.stringify(data, null, 2));
-    } catch (e) {
-      logger.warn({ err: e.message, user: username }, 'telemetry flush failed');
-    }
+    try { storage.appendTelemetryBatch(username, rec.events); }
+    catch (e) { logger.warn({ err: e.message, user: username }, 'telemetry flush failed'); }
   }
   telemetryQueue.clear();
 }
@@ -505,6 +487,7 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: cfg.cookie,
+  store: storage.createSessionStore(session),
 }));
 
 app.use((req, res, next) => {
@@ -719,10 +702,11 @@ function validateOllamaUrl(rawUrl) {
 /* ---------- Health-check ---------- */
 const SERVER_START_TIME = Date.now();
 app.get('/api/health', (req, res) => {
-  const checks = { dataDir: false, projectsRoot: false, users: false };
+  const checks = { dataDir: false, projectsRoot: false, users: false, db: false };
   try { checks.dataDir = fs.existsSync(DATA_DIR); } catch {}
   try { checks.projectsRoot = fs.existsSync(PROJECTS_ROOT); } catch {}
   try { checks.users = loadUsers().users.length > 0; } catch {}
+  try { checks.db = storage.stats().sizeBytes > 0; } catch {}
   const ok = Object.values(checks).every(Boolean);
   res.status(ok ? 200 : 503).json({
     status: ok ? 'ok' : 'degraded',
@@ -1195,39 +1179,27 @@ app.get('/api/projects/:projectId/activity', requireAuth, (req, res) => {
   if (!p) return res.status(404).json({ error: 'not found' });
   if (!canManageProject(req.user, p)) return res.status(403).json({ error: 'forbidden' });
   const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
-  const entries = loadChanges().entries
-    .filter(e => e.projectId === p.id)
-    .slice().reverse().slice(0, limit)
-    .map(({ before, after, ...r }) => r);
+  const entries = storage.queryChanges({ projectId: p.id, limit, offset: 0, full: false }).entries;
   res.json({ entries });
 });
 
 /* ---------- Журнал ---------- */
 app.get('/api/changes', requireRole('admin'), (req, res) => {
   const { file, days, full, projectId } = req.query;
-  let entries = loadChanges().entries;
-  if (projectId) entries = entries.filter(e => e.projectId === projectId);
-  if (file) entries = entries.filter(e => e.file === file);
-  if (days) {
-    const d = parseInt(days, 10);
-    if (Number.isFinite(d) && d > 0) {
-      const since = Date.now() - d * 86400 * 1000;
-      entries = entries.filter(e => new Date(e.timestamp).getTime() >= since);
-    }
-  }
-  entries = entries.slice().reverse();
-  // Полные before/after тяжёлые: не отдаём всю историю целиком.
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || (full === '1' ? 100 : 500), 1), 500);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
-  const total = entries.length;
-  entries = entries.slice(offset, offset + limit);
-  if (full !== '1') entries = entries.map(({ before, after, ...r }) => r);
-  res.json({ entries, total, limit, offset });
+  const d = parseInt(days, 10);
+  const result = storage.queryChanges({
+    file: file ? String(file) : undefined,
+    projectId: projectId ? String(projectId) : undefined,
+    days: Number.isFinite(d) && d > 0 ? d : undefined,
+    limit, offset, full: full === '1',
+  });
+  res.json({ entries: result.entries, total: result.total, limit, offset });
 });
 
 app.post('/api/revert/:id', requireRole('admin'), (req, res) => {
-  const data = loadChanges();
-  const entry = data.entries.find(e => e.id === req.params.id);
+  const entry = storage.getChange(req.params.id);
   if (!entry) return res.status(404).json({ error: 'not found' });
   if (entry.reverted) return res.status(400).json({ error: 'already reverted' });
   const project = loadProjects().projects.find(p => p.id === entry.projectId);
@@ -1276,7 +1248,9 @@ app.post('/api/revert/:id', requireRole('admin'), (req, res) => {
     entry.reverted = true;
     entry.revertedAt = new Date().toISOString();
     entry.revertedBy = req.user.username;
-    saveChanges(data);
+    storage.updateChange(entry.id, {
+      reverted: true, revertedAt: entry.revertedAt, revertedBy: entry.revertedBy,
+    });
     logChange({ user: req.user.username, action: 'revert', projectId: entry.projectId,
       file: entry.file, target: entry.id, details: `откат «${entry.action}»` });
     res.json({ ok: true });
@@ -2603,39 +2577,18 @@ app.post('/api/projects/:projectId/attach-file',
 
 /* ---------- Телеметрия ---------- */
 app.get('/api/telemetry', requireSelfAdmin, (req, res) => {
-  if (!fs.existsSync(TELEMETRY_DIR)) return res.json({ users: [] });
-  const files = fs.readdirSync(TELEMETRY_DIR).filter(f => f.endsWith('.json'));
-  const users = files.map(f => {
-    const username = f.replace(/\.json$/, '');
-    let lastSeen = null, events = 0;
-    try {
-      const d = JSON.parse(fs.readFileSync(path.join(TELEMETRY_DIR, f), 'utf8'));
-      lastSeen = d.lastSeen; events = (d.events || []).length;
-    } catch {}
-    return { username, lastSeen, events };
-  });
-  res.json({ users });
+  res.json({ users: storage.listTelemetryUsers() });
 });
 
 app.get('/api/telemetry/:username', requireSelfAdmin, (req, res) => {
-  const file = telemetryPath(req.params.username);
-  if (!fs.existsSync(file)) return res.status(404).json({ error: 'not found' });
-  try { res.json({ telemetry: JSON.parse(fs.readFileSync(file, 'utf8')) }); }
-  catch { res.status(500).json({ error: 'read error' }); }
+  const telemetry = storage.getTelemetry(req.params.username);
+  if (!telemetry.events.length) return res.status(404).json({ error: 'not found' });
+  res.json({ telemetry });
 });
 
 app.post('/api/telemetry/:username/clear', requireSelfAdmin, (req, res) => {
-  const file = telemetryPath(req.params.username);
-  if (!fs.existsSync(file)) return res.status(404).json({ error: 'not found' });
-  try {
-    atomicWriteFile(file, JSON.stringify({
-      username: req.params.username,
-      firstSeen: new Date().toISOString(),
-      lastSeen: new Date().toISOString(),
-      events: [],
-    }, null, 2));
-    res.json({ ok: true });
-  } catch { res.status(500).json({ error: 'write error' }); }
+  try { storage.clearTelemetry(req.params.username); res.json({ ok: true }); }
+  catch { res.status(500).json({ error: 'write error' }); }
 });
 
 /* ---------- ADS ---------- */

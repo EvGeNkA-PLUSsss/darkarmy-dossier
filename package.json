@@ -11,8 +11,9 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/unit.test.js test/api.test.js",
-    "check": "node --check server.js && node --check darcus.js && node --check config.js && node --check logger.js && node --check extract-text.js && node --check public/app.js && node --check public/admin.js"
+    "test": "node --test test/unit.test.js test/storage.test.js test/api.test.js",
+    "check": "node --check server.js && node --check darcus.js && node --check config.js && node --check logger.js && node --check extract-text.js && node --check public/app.js && node --check public/admin.js",
+    "backup": "node scripts/backup.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

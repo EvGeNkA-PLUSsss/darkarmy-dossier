@@ -70,18 +70,22 @@ Whisper и TTS включаются переменными `WHISPER_BIN`, `WHISP
 
 ## Данные и бэкапы
 
-- Метаданные: `data/*.json` (пользователи, проекты, чаты, журнал, телеметрия).
-- Файлы проектов: `PROJECTS_ROOT`.
-- Запись JSON атомарная (`tmp` → `fsync` → `rename`), перед перезаписью создаётся `.bak`;
-  при повреждении файла данные восстанавливаются из `.bak`, иначе сервер падает явно,
-  а не стартует с пустой базой.
-- Бэкап: копируйте `data/` и `PROJECTS_ROOT`. Пример для Windows:
-  `powershell -File scripts/backup.ps1` (см. `scripts/`).
+- **Метаданные**: SQLite `data/dossier.db` (пользователи, проекты, журнал изменений,
+  телеметрия, сессии). При первом запуске данные из старых `data/*.json` автоматически
+  переносятся в БД, JSON остаются архивом, а перед миграцией создаётся копия
+  `data/backup-pre-sqlite-<дата>/`.
+- **Прочие настройки** (инвайты, наказания, чаты, подписки, реклама, Darcus-конфиг)
+  пока хранятся в JSON с атомарной записью и `.bak`.
+- **Файлы проектов**: `PROJECTS_ROOT`.
+- **Бэкап**: `npm run backup` — консистентная копия SQLite через backup API,
+  JSON-архив и файлы проектов в `../backups/<дата>/` с ротацией (по умолчанию 7 копий).
+  Параметры: `--keep 14`, `--no-projects`, `--dest D:\backups`.
+- **Сессии** хранятся в SQLite и переживают перезапуск сервера (при стабильном `SESSION_SECRET`).
 
 ## Тесты
 
 ```bash
-npm test     # node:test: юнит-тесты + API-матрица безопасности
+npm test     # node:test: юниты, миграция SQLite, API-матрица безопасности
 npm run check
 ```
 
@@ -114,13 +118,15 @@ dossier.example.com {
 
 ```
 server.js          Express API (роуты, middleware, бизнес-логика)
+src/storage.js     SQLite-слой: пользователи, проекты, журнал, телеметрия, сессии
 darcus.js          Ollama, RAG, OCR/vision, TTS/STT, промпты
 config.js          конфигурация из env
 logger.js          логи и access-log с ротацией
 extract-text.js    извлечение текста из файлов
+scripts/backup.js  консистентный бэкап БД + данных + проектов
 public/            SPA без сборки: index.html, app.js, admin.js, style.css, vendor/
-test/              node:test: unit + API
-data/              метаданные (не коммитится)
+test/              node:test: unit + storage + API
+data/              SQLite-БД, JSON-архив, вложения (не коммитится)
 ```
 
 ## Документация
