@@ -130,11 +130,11 @@ Darcus (по умолчанию каждое изменение файла по�
   если в админке включён **faster-whisper** — локальный Whisper на Python;
   иначе браузерное Web Speech API (Chrome/Edge, нужен HTTPS или localhost).
 - **TTS**: по умолчанию браузерный синтез (выбирается русский голос ОС). Для
-  качественного «Silero-подобного» голоса поднимите любой HTTP TTS-сервер,
-  принимающий JSON `{text, voice, format, language}` и возвращающий аудио, и задайте
-  `TTS_URL=http://127.0.0.1:8765/tts`. В админке (**Голос**) есть кнопки
-  «Установить Whisper (авто)» и «Установить/запустить Silero» — они ставят
-  faster-whisper и запускают локальный Silero TTS (`scripts/silero_tts_server.py`).
+  качественного голоса используется локальный **Silero v5.6 RU** (сервер
+  `scripts/silero_tts_server.py`, голоса `aidar/baya/kseniya/xenia/eugene`).
+  В админке (**Голос**) есть кнопки «Установить Whisper (авто)» и
+  «Установить/запустить Silero» — они ставят faster-whisper и запускают Silero TTS.
+  TTS/STT доступны без подписки (локальные ресурсы), но с rate-limit.
 - **Микрофон**: браузер разрешает `getUserMedia` только на `localhost` или HTTPS.
   По HTTP в локальной сети (`http://192.168.x.x:7561`) есть два пути:
   1) открыть `https://192.168.120.128:7562` (встроенный HTTPS с самоподписанным

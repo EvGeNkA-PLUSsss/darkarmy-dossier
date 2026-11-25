@@ -3511,7 +3511,9 @@ app.get('/api/darcus/capabilities', requireAuth, (req, res) => {
   });
 });
 
-app.post('/api/darcus/tts', requireAuth, requireSubscription, rateLimitDarcus, async (req, res) => {
+/* Озвучка и распознавание — локальные ресурсы, доступны всем авторизованным
+   (rate-limit остаётся). Подписка больше не блокирует голосовой режим. */
+app.post('/api/darcus/tts', requireAuth, rateLimitDarcus, async (req, res) => {
   const { text, voice, format } = req.body || {};
   if (!text || typeof text !== 'string') return res.status(400).json({ error: 'empty' });
   if (text.length > 5000) return res.status(413).json({ error: 'слишком длинный текст' });
@@ -3527,7 +3529,7 @@ app.post('/api/darcus/tts', requireAuth, requireSubscription, rateLimitDarcus, a
 const rateLimitTranscribe = makeRateLimiter(60 * 1000, 10, 'Слишком много запросов распознавания');
 app.post(
   '/api/darcus/transcribe',
-  requireAuth, requireSubscription, rateLimitTranscribe,
+  requireAuth, rateLimitTranscribe,
   express.raw({ type: ['audio/*', 'application/octet-stream'], limit: '10mb' }),
   async (req, res) => {
     if (!req.body || !req.body.length) return res.status(400).json({ error: 'no audio' });
@@ -3949,11 +3951,35 @@ function gracefulShutdown(signal) {
   }
 }
 
+/* Автозапуск локального Silero TTS, если он прописан в конфиге, но не отвечает. */
+function ensureSileroServer() {
+  try {
+    const ai = darcus.loadAiConfig();
+    const url = String((ai.tts && ai.tts.url) || '');
+    if (!/127\.0\.0\.1:8765|localhost:8765/.test(url)) return;
+    const rq = require('http').get({ host: '127.0.0.1', port: 8765, path: '/health', timeout: 1000 }, r => {
+      r.resume();
+    });
+    rq.on('error', () => {
+      try {
+        const script = path.join(__dirname, 'scripts', 'silero_tts_server.py');
+        const p = require('child_process').spawn('python', [script, '--port', '8765'], {
+          cwd: __dirname, detached: true, stdio: 'ignore', windowsHide: true,
+        });
+        p.unref();
+        logger.info('Silero TTS: автозапуск (127.0.0.1:8765)');
+      } catch (e) { logger.warn({ err: e.message }, 'Silero TTS: автозапуск не удался'); }
+    });
+    rq.on('timeout', () => rq.destroy());
+  } catch {}
+}
+
 function startServer() {
   const onStarted = () => {
     loadUsers();
     loadProjects();
     migrateOcrCacheIfNeeded();
+    setTimeout(ensureSileroServer, 1500);
 
     // Мягкий прогрев индекса эмбеддингов.
     setTimeout(() => {

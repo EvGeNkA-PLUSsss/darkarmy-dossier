@@ -2,10 +2,10 @@
 """Silero TTS HTTP-сервер для DarkArmy Dossier.
 
 POST /tts  {"text":"...","voice":"aidar","format":"wav"} -> audio/wav
-GET  /health -> {"ok":true,"model":"silero-v4-ru","sample_rate":48000}
+GET  /health -> {"ok":true,"model":"silero-v5_6_ru","sample_rate":48000}
 
 Запуск:  python scripts/silero_tts_server.py --port 8765
-Модель загружается через torch.hub (при первом запуске скачивается).
+Модель v5.6 RU загружается через torch.hub (при первом запуске скачивается).
 """
 import argparse
 import io
@@ -19,6 +19,7 @@ import torch
 
 MODEL = None
 SR = 48000
+MODEL_NAME = 'v5_6_ru'
 
 
 def load_model():
@@ -29,7 +30,7 @@ def load_model():
     # задаётся при синтезе. Поддерживаем и старый формат (model, sample_rate).
     loaded = torch.hub.load(
         'snakers4/silero-models', 'silero_tts',
-        language='ru', speaker='v4_ru', trust_repo=True,
+        language='ru', speaker=MODEL_NAME, trust_repo=True,
     )
     if isinstance(loaded, (tuple, list)) and len(loaded) >= 2 and isinstance(loaded[1], int):
         MODEL, SR = loaded[0], loaded[1]
@@ -70,7 +71,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/health':
-            self._json(200, {'ok': MODEL is not None, 'model': 'silero-v4-ru', 'sample_rate': SR})
+            self._json(200, {'ok': MODEL is not None, 'model': 'silero-' + MODEL_NAME, 'sample_rate': SR})
         else:
             self._json(404, {'error': 'not found'})
 
