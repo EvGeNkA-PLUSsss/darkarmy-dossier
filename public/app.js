@@ -287,6 +287,7 @@ const state = {
   adsDebug: (localStorage.getItem('showAds') === '1'),
   ttsAudio: null,
   ttsAudioUrl: null,
+  ttsSource: null,
   voiceCaps: null,
   /* [NEW] tags/favorites */
   meta: { tags: {}, favorites: {} },
@@ -4249,6 +4250,7 @@ function initBugReport() {
 async function initExtensions() {
   await loadSubscription();
   loadStylePresets();                    // [NEW]
+  initTts();
   initVoiceInput();                      // [FIX] один раз
   initDarcus();
   initInlineEditor();
@@ -4356,7 +4358,21 @@ function initTts() {
   // Останавливаем озвучку при уходе со страницы
   window.addEventListener('beforeunload', () => {
     try { speechSynthesis.cancel(); } catch {}
+    try { stopAllTts(); } catch {}
   });
+  // Разблокируем Web Audio по первому жесту пользователя: иначе Chrome
+  // блокирует auto-play и мы слышим запасной «робот» браузера.
+  const unlock = () => { try { unlockTtsAudio(); } catch {} };
+  document.addEventListener('pointerdown', unlock, true);
+  document.addEventListener('keydown', unlock, true);
+}
+let _ttsCtx = null, _ttsSource = null;
+function unlockTtsAudio() {
+  try {
+    if (!_ttsCtx) _ttsCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (_ttsCtx.state === 'suspended') _ttsCtx.resume().catch(() => {});
+  } catch {}
+  return _ttsCtx;
 }
 
 function _findRuVoice() {
@@ -4401,26 +4417,39 @@ async function toggleSpeakMessage(id, text, btnEl) {
       const d = await r.json().catch(() => ({}));
       throw new Error(d.error || r.statusText);
     }
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    state.ttsAudio = audio;
-    state.ttsAudioUrl = url;
+    const buffer = await r.arrayBuffer();
+    const ctx = unlockTtsAudio();
+    if (!ctx) throw new Error('Web Audio недоступен');
+    if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+    if (ctx.state === 'suspended')
+      throw new Error('AUTOPLAY: нажмите динамик ещё раз — браузер заблокировал автозапуск');
+    const audioBuf = await new Promise((resolve, reject) =>
+      ctx.decodeAudioData(buffer.slice(0), resolve, reject));
+    stopAllTts();
+    const src = ctx.createBufferSource();
+    src.buffer = audioBuf;
+    src.connect(ctx.destination);
+    src.onended = () => stopAllTts();
+    state.ttsSource = src;
     state.ttsSpeakingId = id;
-    audio.onended = audio.onerror = () => stopAllTts();
-    await audio.play();
-    if (btnEl) {
-      btnEl.innerHTML = '<svg class="ico sm"><use href="#i-volume-off"/></svg>';
-    }
+    src.start(0);
+    if (btnEl) btnEl.innerHTML = '<svg class="ico sm"><use href="#i-volume-off"/></svg>';
   } catch (e) {
-    // Fallback на встроенный синтез браузера
     if (btnEl) btnEl.innerHTML = btnEl.dataset._origHtml || '';
-    _speakWithBrowser(id, text, btnEl);
+    const msg = String(e && e.message || e);
+    if (msg.startsWith('AUTOPLAY:')) {
+      showToast(msg.slice('AUTOPLAY:'.length).trim());
+      return;
+    }
+    // Браузерный синтез оставляем только если серверный TTS вообще не настроен.
+    if (state.voiceCaps && state.voiceCaps.tts === false) { _speakWithBrowser(id, text, btnEl); return; }
+    showToast('Silero TTS недоступен: ' + msg.slice(0, 120));
   }
 }
 
 function stopAllTts() {
-  if (state.ttsAudio) { try { state.ttsAudio.pause(); } catch {} state.ttsAudio = null; }
+  if (state.ttsSource) { try { state.ttsSource.stop(); } catch {} state.ttsSource = null; }
+  state.ttsAudio = null;
   if (state.ttsAudioUrl) { try { URL.revokeObjectURL(state.ttsAudioUrl); } catch {} state.ttsAudioUrl = null; }
   try { speechSynthesis.cancel(); } catch {}
   state.ttsSpeakingId = null;
