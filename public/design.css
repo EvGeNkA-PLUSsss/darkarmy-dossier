@@ -1163,7 +1163,11 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
   .darcus-context-bar { padding: 5px 8px; }
 }
 
-/* Кнопка «в самый низ» как в ChatGPT */
+.editor-users-inline {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: 6px; font-size: var(--fs-2); color: var(--text-dim);
+  white-space: nowrap;
+}
 .chat-scroll-bottom {
   position: absolute; right: 16px; bottom: 88px; z-index: 12;
   width: 34px; height: 34px; border-radius: 50%;

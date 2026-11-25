@@ -878,23 +878,32 @@ function connectSSE() {
   });
   evtSource.addEventListener('edit-change', e => {
     const { projectId, file, content, from } = JSON.parse(e.data);
-    if (projectId !== state.projectId || file !== state.editingFile) return;
+    if (projectId !== state.projectId) return;
+    const activeInline = state.inlineEditFile === file;
+    const activeModal = state.editingFile === file;
+    if (!activeInline && !activeModal) return;
     if (from === state.user.username) return;
-    const s1 = area.selectionStart, s2 = area.selectionEnd;
+    const target = activeModal ? area : document.getElementById('inlineArea');
+    if (!target) return;
+    const s1 = target.selectionStart, s2 = target.selectionEnd;
     state.applyingRemote = true;
-    area.value = content;
-    try { area.selectionStart = Math.min(s1, content.length); area.selectionEnd = Math.min(s2, content.length); } catch {}
+    target.value = content;
+    try { target.selectionStart = Math.min(s1, content.length); target.selectionEnd = Math.min(s2, content.length); } catch {}
     state.applyingRemote = false;
-    updatePreview();
+    if (activeModal) updatePreview(); else inlineUpdatePreview();
   });
   evtSource.addEventListener('edit-users', e => {
     const { projectId, file, users } = JSON.parse(e.data);
-    if (projectId !== state.projectId || file !== state.editingFile) return;
-    state.editUsers = users || []; updateEditorUsersUI();
+    if (projectId !== state.projectId) return;
+    if (file !== state.editingFile && file !== state.inlineEditFile) return;
+    state.editUsers = users || [];
+    updateEditorUsersUI();
+    updateInlineEditUsersUI();
   });
   evtSource.addEventListener('edit-saved', e => {
     const { projectId, file, by } = JSON.parse(e.data);
-    if (projectId !== state.projectId || file !== state.editingFile) return;
+    if (projectId !== state.projectId) return;
+    if (file !== state.editingFile && file !== state.inlineEditFile) return;
     showToast(`${by} зафиксировал изменения`);
   });
   evtSource.addEventListener('request', () => { if (state.user.role !== 'admin') return; unread.requests++; updateInboxBadge(); });
@@ -1932,6 +1941,12 @@ async function leaveEditorSession() {
 }
 function updateEditorUsersUI() {
   const el = document.getElementById('editorUsers'); if (!el) return;
+  const others = (state.editUsers || []).filter(u => u !== state.user.username);
+  if (!others.length) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = ''; el.innerHTML = icon('users','sm') + ' ' + escapeHtml(others.join(', '));
+}
+function updateInlineEditUsersUI() {
+  const el = document.getElementById('inlineEditUsers'); if (!el) return;
   const others = (state.editUsers || []).filter(u => u !== state.user.username);
   if (!others.length) { el.style.display = 'none'; el.textContent = ''; return; }
   el.style.display = ''; el.innerHTML = icon('users','sm') + ' ' + escapeHtml(others.join(', '));
@@ -3827,7 +3842,7 @@ async function openEditorForInline(file) {
       let d; try { d = await r.json(); } catch {}
       return dlA('Не удалось открыть: ' + ((d && d.error) || r.statusText));
     }
-    const { content } = await r.json();
+    const { content, users } = await r.json();
     const ed = document.getElementById('inlineEditor');
     const areaEl = document.getElementById('inlineArea');
     // [FIX] Если есть черновик — используем его
@@ -3839,12 +3854,13 @@ async function openEditorForInline(file) {
     ed.style.display = 'flex';
     document.getElementById('content').style.display = 'none';
     state.inlineEditFile = file;
+    state.editUsers = users || [];
     // Пока идёт редактирование, повторная кнопка «Ред.» не нужна и опасна.
     if (editBtn) editBtn.style.display = 'none';
     if (areaEl._resetInfPad) areaEl._resetInfPad();
     // [NEW] Сброс бесконечного скролла для нового файла
     if (areaEl._resetInfPad) areaEl._resetInfPad();
-    injectInlineButtons(); inlineUpdatePreview(); areaEl.focus();
+    injectInlineButtons(); updateInlineEditUsersUI(); inlineUpdatePreview(); areaEl.focus();
   } catch (e) { dlA('Ошибка: ' + e.message); }
 }
 function injectInlineButtons() {
@@ -3859,6 +3875,14 @@ function injectInlineButtons() {
   cancel.onclick = () => leaveInlineEditor(true);
   bar.insertBefore(save, bar.firstChild);
   bar.insertBefore(cancel, save.nextSibling);
+  let usersEl = document.getElementById('inlineEditUsers');
+  if (!usersEl) {
+    usersEl = document.createElement('span');
+    usersEl.id = 'inlineEditUsers';
+    usersEl.className = 'editor-users-inline';
+    usersEl.style.display = 'none';
+    bar.insertBefore(usersEl, save);
+  }
 }
 function removeInlineButtons() {
   document.getElementById('inlineSaveBtn')?.remove();
@@ -3877,6 +3901,8 @@ async function saveInlineEditor() {
     delete state.openEditors[key];
     _persistDrafts();
     state.inlineEditFile = null;
+    state.editUsers = [];
+    updateInlineEditUsersUI();
     document.getElementById('inlineEditor').style.display = 'none';
     document.getElementById('content').style.display = '';
     removeInlineButtons();
@@ -3890,6 +3916,7 @@ async function leaveInlineEditorSilent() {
   const key = state.projectId + '::' + file;
   try { await fetch('/api/edit/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, projectId: state.projectId }) }); } catch {}
   state.inlineEditFile = null;
+  state.editUsers = [];
   document.getElementById('inlineEditor').style.display = 'none';
   document.getElementById('content').style.display = '';
   removeInlineButtons();
@@ -3909,6 +3936,7 @@ async function leaveInlineEditor(confirmIt) {
   _persistDrafts();
   try { await fetch('/api/edit/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, projectId: state.projectId }) }); } catch {}
   state.inlineEditFile = null;
+  state.editUsers = [];
   document.getElementById('inlineEditor').style.display = 'none';
   document.getElementById('content').style.display = '';
   removeInlineButtons();
