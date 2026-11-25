@@ -132,9 +132,16 @@ data/              SQLite-БД, JSON-архив, вложения (не комм
 
 ## Документация
 
-- [Аудит и план развития](../DARKARMY_ROADMAP.md)
-- [Приёмка production-готовности](../DARKARMY_ACCEPTANCE.md)
+- [Аудит и план развития](docs/ROADMAP.md)
+- [Приёмка production-готовности](docs/ACCEPTANCE.md)
+- [Развёртывание](deploy/README.md)
 - [.env.example](.env.example)
+
+### Скриншоты
+
+- [Основной интерфейс](docs/screenshots/desktop-main.png)
+- [Админ-дашборд](docs/screenshots/admin-dashboard.png)
+- [Мобильная версия](docs/screenshots/mobile-main.png)
 
 ## Лицензия
 
