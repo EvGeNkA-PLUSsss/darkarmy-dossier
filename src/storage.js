@@ -323,9 +323,17 @@ function createSessionStore(expressSession) {
 /* ---------- Диагностика ---------- */
 function stats() {
   const file = path.join(dataDir, 'dossier.db');
+  let logicalSize = 0;
+  try {
+    // В WAL-режиме файл БД на диске может быть маленьким, а данные лежать в -wal.
+    // Логический размер (page_count * page_size) отражает реальный объём данных.
+    const pageCount = db.prepare('PRAGMA page_count').get();
+    const pageSize = db.prepare('PRAGMA page_size').get();
+    logicalSize = Number(pageCount.page_count || 0) * Number(pageSize.page_size || 0);
+  } catch {}
   return {
     dbFile: file,
-    sizeBytes: fs.existsSync(file) ? fs.statSync(file).size : 0,
+    sizeBytes: logicalSize || (fs.existsSync(file) ? fs.statSync(file).size : 0),
     users: countUsers(),
     projects: db.prepare('SELECT COUNT(*) AS n FROM projects').get().n,
     changes: db.prepare('SELECT COUNT(*) AS n FROM changes').get().n,

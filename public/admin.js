@@ -27,6 +27,8 @@ const icon = (name, cls='') => `<svg class="ico ${cls}" aria-hidden="true"><use 
   document.querySelectorAll('.admin-tabs .tab').forEach(t =>
     t.onclick = () => switchTab(t.dataset.tab));
   document.getElementById('createUserForm').onsubmit = createUser;
+  document.getElementById('dashboardRefresh').onclick = loadDashboard;
+  document.getElementById('backupRunBtn').onclick = runBackup;
   document.getElementById('refreshChanges').onclick = loadChanges;
   document.getElementById('refreshPunishments').onclick = loadPunishments;
   document.getElementById('refreshInvites').onclick = loadInvites;
@@ -90,15 +92,138 @@ async function toggleTheme() {
 function switchTab(name) {
   document.querySelectorAll('.admin-tabs .tab').forEach(t =>
     t.classList.toggle('active', t.dataset.tab === name));
-  for (const id of ['users','invites','punishments','changes','settings','telemetry','darcus','ads','subs']) {
+  const tabs = ['dashboard','users','invites','punishments','changes','settings','telemetry','darcus','ads','subs'];
+  for (const id of tabs) {
     const el = document.getElementById('tab-' + id);
     if (el) el.style.display = id === name ? '' : 'none';
   }
+  if (name === 'dashboard') loadDashboard();
   if (name === 'darcus') loadDarcusConfig();
   if (name === 'ads')    loadAdsAdmin();
   if (name === 'subs')   loadSubsAdmin();
 }
 window.switchTab = switchTab;
+
+/* ============ Дашборд ============ */
+function formatBytes(n) {
+  if (!Number.isFinite(n) || n < 0) return '—';
+  if (n < 1024) return n + ' Б';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' КБ';
+  if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' МБ';
+  return (n / 1024 / 1024 / 1024).toFixed(2) + ' ГБ';
+}
+function formatUptime(sec) {
+  const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+  if (d) return `${d} д ${h} ч`;
+  if (h) return `${h} ч ${m} мин`;
+  return `${m} мин`;
+}
+async function loadDashboard() {
+  const box = document.getElementById('dashboardBody');
+  if (!box) return;
+  box.innerHTML = '<p class="hint">Загрузка…</p>';
+  try {
+    const r = await fetch('/api/admin/dashboard');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    renderDashboard(d);
+  } catch (e) {
+    box.innerHTML = `<p class="err">Не удалось загрузить состояние: ${escapeHtml(e.message)}</p>`;
+  }
+}
+function dashRow(label, value) {
+  return `<div class="dash-row"><span>${escapeHtml(label)}</span><b>${value}</b></div>`;
+}
+function renderDashboard(d) {
+  const box = document.getElementById('dashboardBody');
+  if (!box) return;
+  const s = d.storage || {};
+  const sz = d.sizes || {};
+  const models = (d.ai && d.ai.models) || [];
+  const backups = d.backups || [];
+
+  const modelRows = models.map(m => {
+    const name = m.name || '—';
+    const chip = !m.name ? '<span class="dash-chip muted">не задана</span>'
+      : m.installed ? '<span class="dash-chip ok">установлена</span>'
+      : '<span class="dash-chip warn">отсутствует</span>';
+    return `<div class="dash-row"><span>${escapeHtml(m.role)}: <code>${escapeHtml(name)}</code></span>${chip}</div>`;
+  }).join('');
+
+  const backupRows = backups.length
+    ? backups.map(b => `<div class="dash-row"><span>${escapeHtml(new Date(b.createdAt).toLocaleString('ru-RU'))}${b.withProjects ? ' · с проектами' : ''}</span><b>${formatBytes(b.sizeBytes)}</b></div>`).join('')
+    : '<p class="hint">Бэкапов ещё нет. Нажмите «Создать бэкап».</p>';
+
+  box.innerHTML = `
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3>${icon('monitor','sm')} Система</h3>
+        ${dashRow('Статус', '<span class="dash-chip ok">работает</span>')}
+        ${dashRow('Окружение', escapeHtml(d.env))}
+        ${dashRow('Node.js', escapeHtml(d.node))}
+        ${dashRow('Uptime', escapeHtml(formatUptime(d.uptimeSec || 0)))}
+      </div>
+      <div class="dash-card">
+        <h3>${icon('database','sm')} База данных</h3>
+        ${dashRow('Размер', formatBytes(s.sizeBytes))}
+        ${dashRow('Пользователи', s.users ?? '—')}
+        ${dashRow('Проекты', s.projects ?? '—')}
+        ${dashRow('Журнал изменений', s.changes ?? '—')}
+        ${dashRow('События телеметрии', s.telemetry ?? '—')}
+        ${dashRow('Активные сессии', s.sessions ?? '—')}
+        ${dashRow('Версия схемы', s.schemaVersion ?? '—')}
+      </div>
+      <div class="dash-card">
+        <h3>${icon('layers','sm')} Данные на диске</h3>
+        ${dashRow('База', formatBytes(sz.db))}
+        ${dashRow('Лог', formatBytes(sz.log))}
+        ${dashRow('Эмбеддинги', formatBytes(sz.embeddings))}
+        ${dashRow('OCR-кэш', formatBytes(sz.ocrCache))}
+        ${dashRow('Вложения чатов', formatBytes(sz.attachments))}
+        ${dashRow('Файлы проектов', formatBytes(sz.projects))}
+        ${dashRow('Все бэкапы', formatBytes(sz.backups))}
+      </div>
+      <div class="dash-card">
+        <h3>${icon('star','sm')} Darcus / Ollama</h3>
+        ${dashRow('Ollama', d.ai && d.ai.reachable
+          ? '<span class="dash-chip ok">доступна</span>'
+          : `<span class="dash-chip warn">недоступна</span>`)}
+        ${d.ai && d.ai.error ? `<p class="hint">${escapeHtml(d.ai.error)}</p>` : ''}
+        ${modelRows}
+        <p class="hint">Модели задаются во вкладке Darcus.</p>
+      </div>
+      <div class="dash-card dash-card-wide">
+        <h3>${icon('download','sm')} Бэкапы <span class="hint" style="font-weight:400">(последние ${backups.length})</span></h3>
+        ${backupRows}
+      </div>
+    </div>`;
+}
+
+async function runBackup() {
+  const btn = document.getElementById('backupRunBtn');
+  const box = document.getElementById('dashboardBody');
+  if (!btn || btn.disabled) return;
+  const old = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = icon('loader','sm') + ' Создаю…';
+  try {
+    const r = await fetch('/api/admin/backup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projects: false }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    await loadDashboard();
+    await _alert('Бэкап создан.\n' + (Array.isArray(d.output) ? d.output.slice(-2).join('\n') : ''));
+  } catch (e) {
+    _alert('Бэкап не удался: ' + e.message);
+    if (box) box.insertAdjacentHTML('afterbegin', `<p class="err">Бэкап не удался: ${escapeHtml(e.message)}</p>`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = old;
+  }
+}
 
 /* ============ Пользователи ============ */
 async function loadUsers() {

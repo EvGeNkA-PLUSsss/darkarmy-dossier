@@ -32,6 +32,7 @@ module.exports = {
   bindHost: process.env.BIND_HOST || '127.0.0.1',
   projectsRoot: path.resolve(process.env.PROJECTS_ROOT || 'F:/Проекты'),
   dataDir: path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data')),
+  backupDir: path.resolve(process.env.BACKUP_DIR || path.join(__dirname, '..', 'backups')),
   sessionSecret,
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
   admin: {

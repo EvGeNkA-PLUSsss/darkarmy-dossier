@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'da-api-'));
 process.env.DATA_DIR = path.join(tmp, 'data');
 process.env.PROJECTS_ROOT = path.join(tmp, 'projects');
+process.env.BACKUP_DIR = path.join(tmp, 'backups');
 process.env.SESSION_SECRET = 'api-secret';
 process.env.ADMIN_PASSWORD = 'AdminTest123!Pass';
 process.env.NODE_ENV = 'test';
@@ -78,6 +79,43 @@ test('без авторизации закрыты дерево, файлы и �
   assert.equal((await anon.request('/api/tree?projectId=default')).status, 401);
   assert.equal((await anon.request('/files/default/x.md')).status, 401);
   assert.equal((await anon.request('/api/users')).status, 401);
+  assert.equal((await anon.request('/api/admin/dashboard')).status, 401);
+});
+
+test('админ-дашборд: состояние системы, хранилище и модели', async () => {
+  const { res, body } = await admin.json('/api/admin/dashboard');
+  assert.equal(res.status, 200);
+  assert.ok(body.storage && Number.isInteger(body.storage.users));
+  assert.ok(body.storage.users >= 1);
+  assert.ok(body.sizes && body.sizes.db > 0);
+  assert.ok(body.ai && Array.isArray(body.ai.models));
+  assert.ok(Array.isArray(body.backups));
+});
+
+test('дашборд и бэкап недоступны обычному участнику', async () => {
+  // Пользователь создаётся здесь же, чтобы тест не зависел от порядка файлов.
+  await admin.json('/api/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'member2', password: 'MemberTest123!', role: 'member' }),
+  });
+  const member = makeClient();
+  await member.login('member2', 'MemberTest123!');
+  assert.equal((await member.request('/api/admin/dashboard')).status, 403);
+  assert.equal((await member.request('/api/admin/backup', { method: 'POST' })).status, 403);
+});
+
+test('бэкап из админки создаёт копию и возвращает список', async () => {
+  const { res, body } = await admin.json('/api/admin/backup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projects: false }),
+  });
+  assert.equal(res.status, 200, JSON.stringify(body));
+  assert.equal(body.ok, true);
+  assert.ok(Array.isArray(body.backups) && body.backups.length >= 1);
+  assert.ok(body.backups[0].sizeBytes > 0);
+  assert.ok(fs.existsSync(path.join(process.env.BACKUP_DIR, body.backups[0].name, 'manifest.json')));
 });
 
 test('загрузка .shtml хранится как text/plain и не исполняется', async () => {
