@@ -450,6 +450,8 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
   gap: 2px;
   padding: 0 var(--sp-4);
   overflow-x: auto;
+  min-width: 0;
+  max-width: 100%;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
 }
@@ -467,7 +469,7 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
 }
 .admin-tabs .tab:hover { color: var(--text); background: var(--surface-hover); }
 .admin-tabs .tab.active { color: var(--text); border-bottom-color: var(--accent); }
-.tab-panel { max-width: 1180px; margin: 0 auto; padding: var(--sp-5); }
+.tab-panel { max-width: 1180px; margin: 0 auto; padding: var(--sp-5); min-width: 0; width: 100%; }
 .tab-panel h2 { font-size: var(--fs-5); margin: 0 0 var(--sp-3); }
 .tab-panel h2:not(:first-child) { margin-top: var(--sp-5); }
 .tab-panel table {
@@ -847,10 +849,14 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
   .admin-tabs { padding: 0 var(--sp-2); }
   .dash-grid { grid-template-columns: 1fr; }
   .dash-head { flex-direction: column; align-items: stretch; }
-  .dash-actions { justify-content: flex-end; }
+  .dash-actions { justify-content: flex-start; flex-wrap: wrap; width: 100%; }
+  .dash-actions button { flex: 1 1 auto; min-width: 0; }
+  .tab-panel { padding: var(--sp-3); }
+  .tab-panel table { display: block; width: 100%; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+  .tab-panel table::-webkit-scrollbar { height: 6px; }
+  .tab-panel table::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   #filebar { min-height: 48px; padding: var(--sp-2) var(--sp-3); }
   .login-card { padding: var(--sp-5); }
-  .tab-panel table { display: block; overflow-x: auto; white-space: nowrap; }
 }
 
 @media (max-width: 480px) {
@@ -888,6 +894,15 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
   background: rgba(239, 68, 68, .2);
   color: var(--danger-fg);
 }
+
+/* Строка «Darcus генерирует…» в дереве — не интерактивна. */
+.tree-generating {
+  opacity: .85;
+  font-style: italic;
+  cursor: default;
+  color: var(--text-dim);
+}
+.tree-generating .ico { color: var(--accent); }
 
 /* Модалка проекта: не растягивать на весь экран при малом содержимом. */
 .project-modal-inner {

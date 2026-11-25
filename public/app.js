@@ -805,6 +805,16 @@ function canEditCurrentProject() {
 function renderNodes(nodes, container, depth) {
   const canEdit = canEditCurrentProject();
   for (const n of nodes) {
+    if (n && n.generating) {
+      // Служебная строка «Darcus генерирует…» — не файл: не кликается,
+      // не открывается и не запрашивает несуществующий путь.
+      const gen = document.createElement('div');
+      gen.className = 'tree-row tree-generating';
+      gen.style.paddingLeft = (8 + depth * 16) + 'px';
+      gen.innerHTML = `<span class="arrow"></span><span class="icon">${icon('loader','sm spin')}</span><span class="name">${escapeHtml(n.name || 'Darcus генерирует…')}</span>`;
+      container.appendChild(gen);
+      continue;
+    }
     const row = document.createElement('div');
     row.className = 'tree-row' + (state.currentFile === n.path ? ' active' : '');
     row.style.paddingLeft = (8 + depth * 16) + 'px';
