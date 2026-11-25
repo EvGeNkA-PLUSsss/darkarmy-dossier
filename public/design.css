@@ -566,6 +566,108 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
 .dash-chip.warn { background: var(--badge-warn-bg); color: var(--badge-warn-fg); }
 .dash-chip.muted { background: var(--badge-muted-bg); color: var(--badge-muted-fg); }
 
+/* ---------- Канбан задач ---------- */
+.project-tasks-kanban {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  max-height: 230px;
+  overflow: auto;
+}
+.kanban-col {
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-height: 218px;
+}
+.kanban-col.drag-over { border-color: var(--accent); background: var(--accent-soft); }
+.kanban-col-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: var(--fs-1);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border-soft);
+}
+.kanban-col-head b {
+  margin-left: auto;
+  font-size: 10px;
+  background: var(--surface);
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+}
+.kanban-add { border: 0; background: transparent; color: var(--muted); padding: 2px; cursor: pointer; }
+.kanban-add:hover { color: var(--accent); }
+.kanban-cards {
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow: auto;
+  min-height: 38px;
+  flex: 1;
+}
+.kanban-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 7px;
+  font-size: var(--fs-2);
+  cursor: grab;
+}
+.kanban-card.dragging { opacity: .5; }
+.kanban-card.done .kanban-card-text { text-decoration: line-through; color: var(--muted); }
+.kanban-card-text { line-height: 1.35; overflow-wrap: anywhere; }
+.kanban-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.kanban-assignee { color: var(--link); display: inline-flex; gap: 2px; align-items: center; }
+.kanban-actions { margin-left: auto; display: flex; gap: 2px; opacity: 0; transition: opacity .15s; }
+.kanban-card:hover .kanban-actions { opacity: 1; }
+.kanban-actions button { border: 0; background: transparent; color: var(--muted); padding: 1px; cursor: pointer; }
+.kanban-actions button:hover { color: var(--text); }
+@media (max-width: 900px) {
+  .project-tasks-kanban { grid-template-columns: 1fr; max-height: none; }
+  .kanban-col { max-height: none; }
+}
+
+/* Доска задач (модалка) */
+.tasks-board-inner {
+  width: min(96vw, 1200px);
+  max-width: 1200px;
+  height: min(80dvh, 780px);
+}
+.tasks-board-columns {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+  overflow: auto;
+}
+.tasks-board-columns .kanban-col { max-height: none; height: 100%; }
+.tasks-board-columns .kanban-cards { min-height: 60px; }
+.tasks-board-columns .kanban-card { padding: 9px 10px; font-size: var(--fs-3); }
+@media (max-width: 900px) {
+  .tasks-board-inner { height: 100dvh; }
+  .tasks-board-columns { grid-template-columns: 1fr; }
+  .tasks-board-columns .kanban-col { height: auto; min-height: 120px; max-height: 32dvh; }
+}
+
 /* ---------- Глобальный поиск: секции ---------- */
 .search-summary { margin-bottom: var(--sp-2); }
 .search-section-head {

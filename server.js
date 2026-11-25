@@ -298,10 +298,24 @@ const saveProjectChats = d => saveDoc('project-chats', d);
 const loadAttachments  = () => loadDoc('attachments', { items: {} });
 const saveAttachments  = d => saveDoc('attachments', d);
 
+const TASK_STATUSES = ['todo', 'doing', 'done'];
+function normalizeTask(t, index) {
+  if (!t || typeof t !== 'object') return t;
+  if (!TASK_STATUSES.includes(t.status)) t.status = t.done ? 'done' : 'todo';
+  t.done = t.status === 'done';
+  if (!Number.isFinite(t.order)) t.order = index;
+  if (t.assignee === undefined) t.assignee = null;
+  return t;
+}
+
 function getProjectChat(projectId) {
   const data = loadProjectChats();
   if (!data.chats[projectId]) data.chats[projectId] = { messages: [], tasks: [] };
-  return { data, chat: data.chats[projectId] };
+  const chat = data.chats[projectId];
+  if (!Array.isArray(chat.messages)) chat.messages = [];
+  if (!Array.isArray(chat.tasks)) chat.tasks = [];
+  chat.tasks = chat.tasks.map((t, i) => normalizeTask(t, i));
+  return { data, chat };
 }
 /* ---------- Телеметрия (SQLite, батчами) ---------- */
 const telemetryQueue = new Map(); // username -> { events: [] }
@@ -2429,11 +2443,18 @@ app.get('/api/projects/:projectId/tasks', requireAuth, projectGuard('read', 'par
 app.post('/api/projects/:projectId/tasks', requireAuth, projectGuard('read', 'params'), (req, res) => {
   const text = String(req.body?.text || '').trim().slice(0, 500);
   if (!text) return res.status(400).json({ error: 'Пустая задача' });
+  const status = TASK_STATUSES.includes(req.body?.status) ? req.body.status : 'todo';
   const { data, chat } = getProjectChat(req.project.id);
+  const maxOrder = chat.tasks.filter(t => t.status === status)
+    .reduce((m, t) => Math.max(m, Number(t.order) || 0), -1);
   const task = {
-    id: crypto.randomUUID(), text, done: false,
+    id: crypto.randomUUID(), text, done: status === 'done', status,
+    order: maxOrder + 1,
+    assignee: typeof req.body?.assignee === 'string' ? req.body.assignee.slice(0, 64) : null,
     createdBy: req.user.username,
     createdAt: new Date().toISOString(),
+    doneBy: status === 'done' ? req.user.username : null,
+    doneAt: status === 'done' ? new Date().toISOString() : null,
   };
   chat.tasks.push(task);
   if (chat.tasks.length > 500) chat.tasks = chat.tasks.slice(-500);
@@ -2447,12 +2468,31 @@ app.patch('/api/projects/:projectId/tasks/:taskId', requireAuth, projectGuard('r
   const { data, chat } = getProjectChat(req.project.id);
   const task = chat.tasks.find(t => t.id === req.params.taskId);
   if (!task) return res.status(404).json({ error: 'not found' });
-  const { done } = req.body || {};
-  if (typeof done === 'boolean') {
-    task.done = done;
-    task.doneBy = done ? req.user.username : null;
-    task.doneAt = done ? new Date().toISOString() : null;
+  const body = req.body || {};
+  if (body.status !== undefined && !TASK_STATUSES.includes(body.status))
+    return res.status(400).json({ error: 'Неизвестный статус задачи' });
+  if (typeof body.text === 'string') {
+    const text = body.text.trim().slice(0, 500);
+    if (text) task.text = text;
   }
+  // Совместимость со старым API: {done:boolean}
+  if (typeof body.done === 'boolean' && body.status === undefined)
+    body.status = body.done ? 'done' : 'todo';
+  if (body.status !== undefined) {
+    const wasDone = task.status === 'done';
+    task.status = body.status;
+    task.done = body.status === 'done';
+    if (task.done && !wasDone) {
+      task.doneBy = req.user.username;
+      task.doneAt = new Date().toISOString();
+    } else if (!task.done) {
+      task.doneBy = null;
+      task.doneAt = null;
+    }
+  }
+  if (Number.isFinite(body.order)) task.order = Math.max(0, Math.floor(body.order));
+  if (body.assignee !== undefined)
+    task.assignee = body.assignee ? String(body.assignee).slice(0, 64) : null;
   saveProjectChats(data);
   const recipients = req.project.members.map(m => m.username);
   sseSendTo([...new Set(recipients)], 'project-task', { projectId: req.project.id, task, op: 'update' });

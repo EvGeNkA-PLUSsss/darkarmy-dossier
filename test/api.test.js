@@ -380,3 +380,56 @@ test('глобальный поиск: проекты, сообщения, за�
   assert.equal(short.res.status, 200);
   assert.deepEqual(short.body.messages, []);
 });
+
+test('канбан задач: статусы, порядок, исполнитель и совместимость с done', async () => {
+  const created = await admin.json('/api/projects/default/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'Канбан-задача', status: 'doing', assignee: 'member1' }),
+  });
+  assert.equal(created.res.status, 200, JSON.stringify(created.body));
+  const task = created.body.task;
+  assert.equal(task.status, 'doing');
+  assert.equal(task.done, false);
+  assert.equal(task.assignee, 'member1');
+
+  const toDone = await admin.json('/api/projects/default/tasks/' + task.id, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'done', order: 0 }),
+  });
+  assert.equal(toDone.res.status, 200);
+  assert.equal(toDone.body.task.status, 'done');
+  assert.equal(toDone.body.task.done, true);
+  assert.ok(toDone.body.task.doneBy);
+  assert.equal(toDone.body.task.order, 0);
+
+  const back = await admin.json('/api/projects/default/tasks/' + task.id, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'todo' }),
+  });
+  assert.equal(back.body.task.status, 'todo');
+  assert.equal(back.body.task.done, false);
+  assert.equal(back.body.task.doneAt, null);
+
+  const legacy = await admin.json('/api/projects/default/tasks/' + task.id, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ done: true }),
+  });
+  assert.equal(legacy.body.task.status, 'done');
+
+  const invalid = await admin.json('/api/projects/default/tasks/' + task.id, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'blocked' }),
+  });
+  assert.equal(invalid.res.status, 400);
+
+  const list = await admin.json('/api/projects/default/tasks');
+  const found = list.body.tasks.find(t => t.id === task.id);
+  assert.ok(found, 'задача должна быть в списке');
+  assert.ok(['todo', 'doing', 'done'].includes(found.status));
+  assert.equal(typeof found.order, 'number');
+});

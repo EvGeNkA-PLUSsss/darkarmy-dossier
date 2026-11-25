@@ -1989,13 +1989,12 @@ function initChat() {
     const text = inp.value.trim();
     if (!text || !state.projectId) return;
     inp.value = '';
-    const r = await fetch(`/api/projects/${state.projectId}/tasks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
-    if (!r.ok) { const d = await r.json().catch(()=>({})); return showToast('Ошибка: ' + (d.error || r.statusText)); }
-    const { task } = await r.json();
-    if (!state.projectTasks.some(t => t.id === task.id)) state.projectTasks.push(task);
-    renderProjectTasks();
+    await createTask(text, 'todo');
   };
-  document.getElementById('toggleTasksBtn').onclick = () => document.querySelector('.project-tasks-block').classList.toggle('collapsed');
+  const tasksToggleBtn = document.getElementById('toggleTasksBtn');
+  if (tasksToggleBtn) tasksToggleBtn.onclick = () => document.querySelector('.project-tasks-block').classList.toggle('collapsed');
+  const tasksBoardBtn = document.getElementById('tasksBoardBtn');
+  if (tasksBoardBtn) tasksBoardBtn.onclick = openTasksBoard;
 
   document.querySelectorAll('.attach-btn').forEach(btn => {
     btn.onclick = () => { const key = btn.dataset.attach; document.querySelector(`.attach-input[data-attach-input="${key}"]`).click(); };
@@ -2293,31 +2292,169 @@ async function loadProjectChat() {
     renderProjectTasks(); renderProjectMessages();
   } catch (e) { box.innerHTML = `<div class="chat-empty">Ошибка: ${escapeHtml(e.message)}</div>`; }
 }
-function renderProjectTasks() {
-  const list = document.getElementById('projectTasksList'); if (!list) return;
-  list.innerHTML = '';
+const TASK_COLS = [
+  { key: 'todo', label: 'К выполнению' },
+  { key: 'doing', label: 'В работе' },
+  { key: 'done', label: 'Готово' },
+];
+
+function taskStatus(t) { return t.status || (t.done ? 'done' : 'todo'); }
+function taskStatusLabel(s) { return ({ todo: 'к выполнению', doing: 'в работе', done: 'готово' })[s] || s; }
+
+async function patchTask(id, body) {
+  const r = await fetch(`/api/projects/${state.projectId}/tasks/${id}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!r.ok) { let d; try { d = await r.json(); } catch {} ; showToast('Задача не обновлена: ' + ((d && d.error) || r.statusText)); return null; }
+  const { task } = await r.json();
+  const i = state.projectTasks.findIndex(x => x.id === task.id);
+  if (i >= 0) state.projectTasks[i] = task;
+  return task;
+}
+async function createTask(text, status = 'todo', assignee = null) {
+  const r = await fetch(`/api/projects/${state.projectId}/tasks`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, status, assignee }),
+  });
+  if (!r.ok) { let d; try { d = await r.json(); } catch {} ; showToast('Задача не создана: ' + ((d && d.error) || r.statusText)); return null; }
+  const { task } = await r.json();
+  if (!state.projectTasks.some(t => t.id === task.id)) state.projectTasks.push(task);
+  renderProjectTasks();
+  return task;
+}
+async function deleteTask(id) {
+  if (!(await dlC('Удалить задачу?'))) return;
+  const r = await fetch(`/api/projects/${state.projectId}/tasks/${id}`, { method: 'DELETE' });
+  if (!r.ok) return showToast('Не удалось удалить задачу');
+  state.projectTasks = state.projectTasks.filter(x => x.id !== id);
+  renderProjectTasks();
+}
+async function moveTaskTo(id, status) {
+  const column = (state.projectTasks || []).filter(t => taskStatus(t) === status && t.id !== id);
+  const order = column.reduce((m, t) => Math.max(m, Number(t.order) || 0), -1) + 1;
+  const task = await patchTask(id, { status, order });
+  if (task) renderProjectTasks();
+}
+async function editTask(t) {
+  const text = await dlP('Текст задачи:', t.text, 'Редактировать задачу');
+  if (text == null) return;
+  const assignee = await dlP('Исполнитель (логин или пусто):', t.assignee || '', 'Исполнитель');
+  if (assignee == null) return;
+  const task = await patchTask(t.id, { text: text.trim() || t.text, assignee: assignee.trim() || null });
+  if (task) renderProjectTasks();
+}
+
+let tasksBoardEl = null;
+function ensureTasksBoardModal() {
+  if (tasksBoardEl) return tasksBoardEl;
+  const el = document.createElement('div');
+  el.className = 'modal';
+  el.style.display = 'none';
+  el.innerHTML = `
+    <div class="modal-inner tasks-board-inner">
+      <div class="modal-head">
+        <span>${icon('layers','sm')} Доска задач · <span id="tasksBoardProject"></span></span>
+        <button type="button" data-close title="Закрыть">${icon('x')}</button>
+      </div>
+      <div id="tasksBoardColumns" class="tasks-board-columns"></div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if (e.target === el || e.target.closest('[data-close]')) el.style.display = 'none'; });
+  tasksBoardEl = el;
+  return el;
+}
+function openTasksBoard() {
+  if (!state.projectId) return;
+  const el = ensureTasksBoardModal();
+  const nameEl = el.querySelector('#tasksBoardProject');
+  if (nameEl) nameEl.textContent = state.currentProject ? state.currentProject.name : '';
+  el.style.display = 'flex';
+  renderProjectKanban();
+}
+function renderProjectKanban() {
+  const box = document.getElementById('tasksBoardColumns');
+  if (!box) return;
+  box.innerHTML = '';
   const tasks = state.projectTasks || [];
+  for (const col of TASK_COLS) {
+    const colTasks = tasks.filter(t => taskStatus(t) === col.key)
+      .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+    const colEl = document.createElement('div');
+    colEl.className = 'kanban-col';
+    colEl.dataset.status = col.key;
+    colEl.innerHTML = `
+      <div class="kanban-col-head">
+        <span>${col.label}</span><b>${colTasks.length}</b>
+        <button type="button" class="kanban-add" title="Добавить задачу">${icon('plus','sm')}</button>
+      </div>
+      <div class="kanban-cards"></div>`;
+    const cards = colEl.querySelector('.kanban-cards');
+    for (const t of colTasks) cards.appendChild(buildKanbanCard(t));
+    colEl.addEventListener('dragover', e => { e.preventDefault(); colEl.classList.add('drag-over'); });
+    colEl.addEventListener('dragleave', e => { if (!colEl.contains(e.relatedTarget)) colEl.classList.remove('drag-over'); });
+    colEl.addEventListener('drop', async e => {
+      e.preventDefault();
+      colEl.classList.remove('drag-over');
+      const id = e.dataTransfer.getData('text/plain');
+      if (id) await moveTaskTo(id, col.key);
+    });
+    colEl.querySelector('.kanban-add').onclick = async () => {
+      const text = await dlP('Новая задача:', '', 'Задача');
+      if (text && text.trim()) await createTask(text.trim(), col.key);
+    };
+    box.appendChild(colEl);
+  }
+}
+
+function buildKanbanCard(t) {
+  const el = document.createElement('div');
+  el.className = 'kanban-card' + (taskStatus(t) === 'done' ? ' done' : '');
+  el.draggable = true;
+  el.dataset.id = t.id;
+  const canDel = state.user.role === 'admin' || (state.currentProject && state.currentProject.creator === state.user.username) || t.createdBy === state.user.username;
+  el.innerHTML = `
+    <div class="kanban-card-text">${escapeHtml(t.text)}</div>
+    <div class="kanban-card-meta">
+      ${t.assignee ? `<span class="kanban-assignee">${icon('user','sm')} ${escapeHtml(t.assignee)}</span>` : ''}
+      <span class="kanban-created">${escapeHtml(t.createdBy || '')}</span>
+      <span class="kanban-actions">
+        <button type="button" data-act="edit" title="Редактировать">${icon('edit','sm')}</button>
+        ${canDel ? `<button type="button" data-act="del" title="Удалить">${icon('trash-2','sm')}</button>` : ''}
+      </span>
+    </div>`;
+  el.addEventListener('dragstart', e => {
+    e.dataTransfer.setData('text/plain', t.id);
+    el.classList.add('dragging');
+  });
+  el.addEventListener('dragend', () => el.classList.remove('dragging'));
+  el.querySelector('[data-act="edit"]').onclick = e => { e.stopPropagation(); editTask(t); };
+  const del = el.querySelector('[data-act="del"]');
+  if (del) del.onclick = e => { e.stopPropagation(); deleteTask(t.id); };
+  el.addEventListener('dblclick', () => editTask(t));
+  return el;
+}
+
+function renderProjectTasks() {
+  // Канбан живёт в отдельной модалке; если она открыта — обновляем и её.
+  if (tasksBoardEl && tasksBoardEl.style.display !== 'none') renderProjectKanban();
+  const list = document.getElementById('projectTasksList');
+  if (!list) return;
+  const tasks = state.projectTasks || [];
+  list.style.display = '';
+  list.innerHTML = '';
   if (!tasks.length) { list.innerHTML = '<div class="chat-empty" style="padding:6px 0;margin:0;font-size:12px">Задач пока нет</div>'; return; }
   for (const t of tasks) {
     const el = document.createElement('div');
-    el.className = 'task-item' + (t.done ? ' done' : '');
+    const status = taskStatus(t);
+    el.className = 'task-item' + (status === 'done' ? ' done' : '');
     const canDel = state.user.role === 'admin' || (state.currentProject && state.currentProject.creator === state.user.username) || t.createdBy === state.user.username;
-    el.innerHTML = `<button class="task-toggle" title="${t.done ? 'Вернуть' : 'Готово'}">${t.done ? icon('check-square','sm') : icon('square','sm')}</button><div class="task-body"><div class="task-text">${escapeHtml(t.text)}</div><div class="task-meta">${escapeHtml(t.createdBy || '')} · ${new Date(t.createdAt).toLocaleString('ru-RU')}${t.done ? ` · ${icon('check','sm')}` : ''}</div></div>${canDel ? `<button class="task-del" title="Удалить">${icon('trash-2','sm')}</button>` : ''}`;
+    el.innerHTML = `<button class="task-toggle" title="${status === 'done' ? 'Вернуть' : 'Готово'}">${status === 'done' ? icon('check-square','sm') : icon('square','sm')}</button><div class="task-body"><div class="task-text">${escapeHtml(t.text)}</div><div class="task-meta">${t.assignee ? icon('user','sm') + ' ' + escapeHtml(t.assignee) + ' · ' : ''}${escapeHtml(taskStatusLabel(status))} · ${escapeHtml(t.createdBy || '')} · ${new Date(t.createdAt).toLocaleString('ru-RU')}${status === 'done' ? ` · ${icon('check','sm')}` : ''}</div></div>${canDel ? `<button class="task-del" title="Удалить">${icon('trash-2','sm')}</button>` : ''}`;
     el.querySelector('.task-toggle').onclick = async () => {
-      const r = await fetch(`/api/projects/${state.projectId}/tasks/${t.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ done: !t.done }) });
-      if (!r.ok) return;
-      const { task } = await r.json();
-      const i = state.projectTasks.findIndex(x => x.id === task.id); if (i >= 0) state.projectTasks[i] = task;
-      renderProjectTasks();
+      const task = await patchTask(t.id, { done: status !== 'done' });
+      if (task) renderProjectTasks();
     };
     const delBtn = el.querySelector('.task-del');
-    if (delBtn) delBtn.onclick = async () => {
-      if (!(await dlC('Удалить задачу?'))) return;
-      const r = await fetch(`/api/projects/${state.projectId}/tasks/${t.id}`, { method: 'DELETE' });
-      if (!r.ok) return;
-      state.projectTasks = state.projectTasks.filter(x => x.id !== t.id);
-      renderProjectTasks();
-    };
+    if (delBtn) delBtn.onclick = () => deleteTask(t.id);
     list.appendChild(el);
   }
 }
