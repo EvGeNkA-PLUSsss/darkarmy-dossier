@@ -7,10 +7,11 @@
 <title>DarkArmy Dossier</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5 L19.5 5.5 V11.5 C19.5 16.5 16.2 20.2 12 21.5 C7.8 20.2 4.5 16.5 4.5 11.5 V5.5 Z' stroke='%23e63946' stroke-width='1.6' fill='none'/%3E%3Cpath d='M9 11.7 L11 13.7 L15.2 9.5' stroke='%23e63946' stroke-width='1.8' fill='none'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- Библиотеки вендорены локально (public/vendor): нет CDN-зависимости,
+     supply-chain риска и поломки в офлайне. Тяжёлые xlsx/mammoth
+     подгружаются лениво только при просмотре соответствующих файлов. -->
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/purify.min.js"></script>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
@@ -103,7 +104,9 @@
 
 <header id="topbar">
   <div class="brand">
-    <!-- [UX] Кнопка меню убрана — открытие сайдбара свайпом справа -->
+    <button id="menuBtn" class="menu-btn" type="button" title="Меню" aria-label="Открыть меню">
+      <svg class="ico"><use href="#i-menu"/></svg>
+    </button>
     <svg class="logo" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
       <path d="M12 2.5 L19.5 5.5 V11.5 C19.5 16.5 16.2 20.2 12 21.5 C7.8 20.2 4.5 16.5 4.5 11.5 V5.5 Z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
       <path d="M9 11.7 L11 13.7 L15.2 9.5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -131,9 +134,9 @@
     <div id="ad-slot-sidebar-top" class="ad-slot ad-sidebar" data-slot="sidebar-top"></div>
 
     <div class="sidebar-actions">
-      <button id="newFileBtn"   class="side-btn" style="display:none" title="Создать .md"><svg class="ico sm"><use href="#i-plus"/></svg> Файл</button>
+      <button id="newFileBtn"   class="side-btn" style="display:none" title="Создать новый .md-файл"><svg class="ico sm"><use href="#i-plus"/></svg> Создать</button>
       <button id="newFolderBtn" class="side-btn" style="display:none" title="Создать папку"><svg class="ico sm"><use href="#i-folder-plus"/></svg> Папка</button>
-      <button id="uploadBtn"    class="side-btn" style="display:none" title="Загрузить файл"><svg class="ico sm"><use href="#i-upload"/></svg> Файл</button>
+      <button id="uploadBtn"    class="side-btn" style="display:none" title="Загрузить файл с компьютера"><svg class="ico sm"><use href="#i-upload"/></svg> Загрузить</button>
       <input  id="uploadInput"  type="file" style="display:none">
     </div>
     <button id="darcusGenBtn" class="side-btn darcus-create-btn" style="display:none" title="Создать документ через Darcus">
@@ -317,9 +320,6 @@
 
     <div class="chat-view darcus-view" id="chatViewDarcus" style="display:none">
       <div class="darcus-chats-bar" id="darcusChatsBar">
-        <button id="darcusChatsToggle" class="darcus-chats-toggle" title="Список чатов">
-          <svg class="ico sm"><use href="#i-menu"/></svg>
-        </button>
         <select id="darcusChatSelect" title="Выбрать чат"></select>
         <button id="darcusChatNewBtn" title="Новый чат"><svg class="ico sm"><use href="#i-plus"/></svg></button>
         <button id="darcusChatDelBtn" title="Удалить чат"><svg class="ico sm"><use href="#i-trash-2"/></svg></button>
@@ -347,7 +347,11 @@
         <button type="submit" title="Отправить"><svg class="ico"><use href="#i-send"/></svg></button>
       </form>
     </div>
+  </aside>
+</div><!-- /#layout -->
 
+<!-- Модалки и lightbox живут на уровне body: иначе transform у #chatPanel
+     превращал их в потомков панели и на мобильных они уезжали за экран. -->
 <div id="editorModal" class="modal" style="display:none">
   <div class="modal-inner">
     <div class="modal-head">

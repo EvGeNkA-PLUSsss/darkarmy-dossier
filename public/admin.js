@@ -38,7 +38,7 @@ const icon = (name, cls='') => `<svg class="ico ${cls}" aria-hidden="true"><use 
   document.getElementById('genInviteForm').onsubmit = generateInvites;
   document.getElementById('manualInviteForm').onsubmit = createManualInvite;
 
-  if (me.username === 'admin') {
+  if (me.role === 'admin') {
     document.getElementById('telemetryTab').style.display = '';
     document.getElementById('darcusTab').style.display = '';
     document.getElementById('adsTab').style.display = '';
@@ -59,12 +59,16 @@ const icon = (name, cls='') => `<svg class="ico ${cls}" aria-hidden="true"><use 
     document.getElementById('punishModal').style.display = 'none';
   document.getElementById('punishForm').onsubmit = submitPunishment;
 
-  await loadUsers();
-  await loadInvites();
-  await loadPunishments();
-  await loadChanges();
-  await loadSettings();
-  if (me.username === 'admin') await loadTelemetryUsers();
+  // Каждая вкладка грузится независимо: раньше один сбой API убивал всю админку.
+  const tasks = [
+    ['users', loadUsers], ['invites', loadInvites], ['punishments', loadPunishments],
+    ['changes', loadChanges], ['settings', loadSettings],
+  ];
+  if (me.role === 'admin') tasks.push(['telemetry', loadTelemetryUsers]);
+  for (const [name, fn] of tasks) {
+    try { await fn(); }
+    catch (e) { console.error('admin load', name, e); setTimeout(() => _alert('Не удалось загрузить раздел «' + name + '»: ' + e.message), 0); }
+  }
 })();
 
 function applyTheme(t) {

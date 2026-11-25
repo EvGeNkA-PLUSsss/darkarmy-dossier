@@ -6,6 +6,18 @@ const crypto = require('crypto');
 const env = process.env.NODE_ENV || 'development';
 const isProd = env === 'production';
 
+/* TRUST_PROXY: false | true | число хопов | список IP/CIDR.
+   Раньше строка 'true' передавалась в Express как есть и роняла старт. */
+function parseTrustProxy(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return false;
+  const s = String(raw).trim();
+  const lower = s.toLowerCase();
+  if (lower === 'true' || lower === '1') return true;
+  if (lower === 'false' || lower === '0') return false;
+  if (/^\d+$/.test(s)) return parseInt(s, 10);
+  return s; // список адресов/подсетей для Express
+}
+
 let sessionSecret = process.env.SESSION_SECRET;
 if (!sessionSecret) {
   if (isProd) throw new Error('SESSION_SECRET обязателен в production. Задайте через env.');
@@ -13,19 +25,21 @@ if (!sessionSecret) {
   sessionSecret = crypto.randomBytes(32).toString('hex');
 }
 
-const trustProxy = process.env.TRUST_PROXY
-  ? (Number.isFinite(+process.env.TRUST_PROXY) ? +process.env.TRUST_PROXY : process.env.TRUST_PROXY)
-  : false;
-
 module.exports = {
   env,
   isProd,
   port: parseInt(process.env.PORT, 10) || 7561,
+  bindHost: process.env.BIND_HOST || '127.0.0.1',
   projectsRoot: path.resolve(process.env.PROJECTS_ROOT || 'F:/Проекты'),
-  dataDir: path.join(__dirname, 'data'),
+  dataDir: path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data')),
   sessionSecret,
-  trustProxy,
+  trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
+  admin: {
+    username: process.env.ADMIN_USERNAME || 'admin',
+    initialPassword: process.env.ADMIN_PASSWORD || '', // пусто — сгенерировать случайный
+  },
   cookie: {
+    name: 'sid',
     secure: isProd,
     sameSite: 'strict',
     httpOnly: true,
@@ -46,6 +60,9 @@ module.exports = {
     logMaxEntries: 5_000,
     logContentMax: 32 * 1024,
     logFileMaxBytes: 10 * 1024 * 1024,
+    telemetryMaxEvents: 2_000,
+    telemetryFlushMs: 2_000,
+    maxSsePerUser: 5,
   },
   darcus: {
     allowedHosts: (process.env.DARCUS_ALLOWED_HOSTS || '')

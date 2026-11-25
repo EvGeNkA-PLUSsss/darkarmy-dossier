@@ -4,24 +4,36 @@
 if (typeof marked === 'undefined') {
   window.marked = { parse: t => `<pre>${String(t||'').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</pre>` };
 }
+function escapeHtmlText(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
 function sanitize(html) {
   if (typeof DOMPurify !== 'undefined') {
     return DOMPurify.sanitize(html, {
       USE_PROFILES: { html: true },
       ADD_ATTR: ['target', 'rel'],
-      FORBID_TAGS: ['style', 'iframe', 'object', 'embed', 'form'],
-      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
+      FORBID_TAGS: ['style', 'iframe', 'object', 'embed', 'form', 'math', 'base'],
+      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'srcdoc'],
     });
   }
-  return String(html)
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
-    .replace(/<object[\s\S]*?<\/object>/gi, '')
-    .replace(/<embed[^>]*>/gi, '')
-    .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/javascript:/gi, '')
-    .replace(/data:text\/html/gi, '');
+  // Fail-closed: если санитайзер не загрузился, показываем текст, а не «починенный»
+  // регулярками HTML (такой fallback обходится и создаёт ложное чувство защиты).
+  return '<pre class="plain-fallback">' + escapeHtmlText(html) + '</pre>';
+}
+const _scriptCache = new Map();
+function loadScriptOnce(src) {
+  if (_scriptCache.has(src)) return _scriptCache.get(src);
+  const p = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Не удалось загрузить ' + src));
+    document.head.appendChild(s);
+  });
+  _scriptCache.set(src, p);
+  return p;
 }
 function mdToHtml(text) {
   try {
@@ -36,6 +48,11 @@ function mdToHtml(text) {
 function icon(name, cls = '') {
   return `<svg class="ico ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 }
+/* Человеческие подписи ролей: в API/данных остаются английские ключи. */
+const PROJECT_ROLE_LABELS = { creator: 'Создатель', editor: 'Редактор', member: 'Участник' };
+const SITE_ROLE_LABELS = { admin: 'Администратор', member: 'Участник' };
+const projectRoleLabel = r => PROJECT_ROLE_LABELS[r] || r || '—';
+const siteRoleLabel = r => SITE_ROLE_LABELS[r] || r || '—';
 
 /* =========================================================
    [NEW] Обёртки uiDialog — все alert/confirm/prompt через модалки
@@ -218,8 +235,14 @@ const isMobile = () => window.matchMedia('(max-width: 900px)').matches;
       if (punishMenu && !punishMenu.contains(e.target)) punishMenu.style.display = 'none';
     });
 
-    // [UX] Меню открывается свайпом (см. initSwipeSidebar)
+    // [UX] Меню открывается свайпом (см. initSwipeSidebar), но на телефоне
+    // должна быть и явная кнопка: свайп от края конфликтует с системным back.
     try { initSwipeSidebar(); } catch (e) { console.error('swipe', e); }
+    const menuBtn = document.getElementById('menuBtn');
+    if (menuBtn) menuBtn.onclick = () => {
+      const open = document.body.classList.toggle('sidebar-open');
+      menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
     const bk = document.getElementById('sidebarBackdrop');
     if (bk) bk.onclick = () => document.body.classList.remove('sidebar-open');
     const tb = document.getElementById('trashBtn');
@@ -260,7 +283,6 @@ const isMobile = () => window.matchMedia('(max-width: 900px)').matches;
     safe('move', initMove);
     safe('dnd', initDragAndDrop);
     safe('search', initSearch);
-    safe('meta', loadMeta);
     safe('tts', initTts);
     safe('selection-menu', initSelectionMenu);
     safe('print', initPrint);
@@ -328,8 +350,9 @@ function openLightbox(src) {
 
 /* [NEW] Meta (tags/favorites) */
 async function loadMeta() {
+  if (!state.projectId) { state.meta = state.meta || { tags: {}, favorites: {} }; return; }
   try {
-    const r = await fetch(`/api/projects/${state.projectId}/meta`);
+    const r = await fetch(`/api/projects/${encodeURIComponent(state.projectId)}/meta`);
     if (r.ok) state.meta = await r.json();
   } catch {}
   state.meta = state.meta || { tags: {}, favorites: {} };
@@ -366,7 +389,7 @@ function renderProjectList() {
   for (const p of filtered) {
     const el = document.createElement('div');
     el.className = 'project-list-item' + (p.id === state.projectId ? ' active' : '');
-    el.innerHTML = `${icon('layers','sm')}<span class="proj-name">${escapeHtml(p.name)}</span>${p.myRole ? `<span class="proj-role">${escapeHtml(p.myRole)}</span>` : ''}`;
+    el.innerHTML = `${icon('layers','sm')}<span class="proj-name">${escapeHtml(p.name)}</span>${p.myRole ? `<span class="proj-role">${escapeHtml(projectRoleLabel(p.myRole))}</span>` : ''}`;
     el.onclick = () => { closeProjectDropdown(); switchProject(p.id); };
     list.appendChild(el);
   }
@@ -383,6 +406,12 @@ async function loadProjects() {
 async function switchProject(id) {
   
   if (!id || id === state.projectId) return;
+  // Закрываем inline-редактор ДО смены projectId: иначе /api/edit/leave уходил
+  // уже с новым проектом, черновик сохранялся под чужим ключом, а в редакторе
+  // мог остаться текст файла из старого проекта (и затереть одноимённый файл).
+  if (state.inlineEditFile) {
+    try { await leaveInlineEditorSilent(); } catch {}
+  }
   // [NEW] Сохраняем открытый файл для текущего проекта
   if (state.projectId && state.currentFile) {
     state.lastFileByProject[state.projectId] = state.currentFile;
@@ -480,7 +509,7 @@ function renderProjectMembers(body, p, canManage) {
     addWrap.className = 'member-row';
     addWrap.innerHTML = `
       <input id="projAddUser" placeholder="Логин" style="flex:1;padding:8px 10px;background:var(--code-bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">
-      <select id="projAddRole"><option value="member">member</option><option value="editor">editor</option><option value="creator">creator</option></select>
+      <select id="projAddRole"><option value="member">Участник</option><option value="editor">Редактор</option><option value="creator">Создатель</option></select>
       <button id="projAddBtn" class="primary"><svg class="ico sm"><use href="#i-user-plus"/></svg> Добавить</button>`;
     body.appendChild(addWrap);
     addWrap.querySelector('#projAddBtn').onclick = async () => {
@@ -498,10 +527,10 @@ function renderProjectMembers(body, p, canManage) {
     row.className = 'member-row';
     const isCreatorRow = m.username === p.creator;
     row.innerHTML = `
-      <span class="name">${icon('user','sm')} ${escapeHtml(m.username)} ${isCreatorRow ? '<span class="creator-badge">creator</span>' : ''}</span>
+      <span class="name">${icon('user','sm')} ${escapeHtml(m.username)} ${isCreatorRow ? '<span class="creator-badge">Создатель</span>' : ''}</span>
       ${canManage && !isCreatorRow ? `
-        <select data-u="${escapeHtml(m.username)}"><option value="member" ${m.role==='member'?'selected':''}>member</option><option value="editor" ${m.role==='editor'?'selected':''}>editor</option><option value="creator" ${m.role==='creator'?'selected':''}>creator</option></select>
-        <button class="danger" data-remove="${escapeHtml(m.username)}">${icon('trash','sm')}</button>` : `<span class="muted" style="font-size:12px">${m.role}</span>`}`;
+        <select data-u="${escapeHtml(m.username)}"><option value="member" ${m.role==='member'?'selected':''}>Участник</option><option value="editor" ${m.role==='editor'?'selected':''}>Редактор</option><option value="creator" ${m.role==='creator'?'selected':''}>Создатель</option></select>
+        <button class="danger" data-remove="${escapeHtml(m.username)}">${icon('trash','sm')}</button>` : `<span class="muted" style="font-size:12px">${escapeHtml(projectRoleLabel(m.role))}</span>`}`;
     body.appendChild(row);
     if (canManage && !isCreatorRow) {
       row.querySelector('select').onchange = async e => {
@@ -538,7 +567,7 @@ function renderProjectSettings(body, p, canManage, isAdmin) {
     const danger = document.createElement('div');
     danger.style = 'margin-top:24px;padding-top:16px;border-top:1px solid var(--border)';
     danger.innerHTML = `
-      <h3 style="font-size:14px;color:#ff8888;margin-bottom:8px">Опасная зона</h3>
+      <h3 style="font-size:14px;color:var(--danger-fg);margin-bottom:8px">Опасная зона</h3>
       <p class="hint" style="margin-bottom:10px">Удаление проекта необратимо. Все файлы будут стёрты.</p>
       <button id="projDelete" class="danger-btn">${icon('trash','sm')} Удалить проект</button>`;
     body.appendChild(danger);
@@ -582,9 +611,9 @@ async function reloadCurrentProject() {
 async function updateUploadLabel() {
   try {
     const s = await (await fetch('/api/settings')).json();
-    if (state.user.role === 'admin') uploadBtn.innerHTML = `${icon('upload','sm')} Файл`;
-    else if (s.uploadLimitMB) uploadBtn.innerHTML = `${icon('upload','sm')} ≤ ${s.uploadLimitMB} МБ`;
-    else uploadBtn.innerHTML = `${icon('upload','sm')} Файл`;
+    if (state.user.role === 'admin') uploadBtn.innerHTML = `${icon('upload','sm')} Загрузить`;
+    else if (s.uploadLimitMB) uploadBtn.innerHTML = `${icon('upload','sm')} Загрузить ≤ ${s.uploadLimitMB} МБ`;
+    else uploadBtn.innerHTML = `${icon('upload','sm')} Загрузить`;
   } catch {}
 }
 
@@ -599,7 +628,10 @@ function sendClientTelemetry() {
   } catch {}
 }
 function startRoleWatcher() {
+  // Раньше опрашивали /api/me каждые 30 секунд (8251 запрос в логе за месяц).
+  // Роль/бан меняются редко — 5 минут и только для активной вкладки достаточно.
   setInterval(async () => {
+    if (document.hidden) return;
     try {
       const r = await fetch('/api/me');
       const { user, muted } = await r.json();
@@ -607,7 +639,7 @@ function startRoleWatcher() {
       if (user.role !== state.user.role || user.username !== state.user.username) location.reload();
       state.muted = !!muted;
     } catch {}
-  }, 30000);
+  }, 5 * 60 * 1000);
 }
 
 let evtSource = null;
@@ -1243,6 +1275,8 @@ async function openFile(p) {
   changesBtn.classList.remove('active');
   renderTree();
   if (isMobile()) document.body.classList.remove('sidebar-open');
+  const scrollArea = document.getElementById('scrollArea');
+  if (scrollArea) scrollArea.scrollTop = 0;
   filebarEl.style.display = ''; fileNameEl.textContent = p;
   await renderFileContent();
 
@@ -1363,7 +1397,10 @@ function resetViewer() {
 
 /* Office */
 async function renderDocx(url) {
-  if (typeof mammoth === 'undefined') { contentEl.innerHTML = '<p class="err">Библиотека mammoth не загружена</p>'; return; }
+  if (typeof mammoth === 'undefined') {
+    try { await loadScriptOnce('vendor/mammoth.browser.min.js'); }
+    catch (e) { contentEl.innerHTML = `<p class="err">Не удалось загрузить просмотрщик DOCX: ${escapeHtmlText(e.message)}</p>`; return; }
+  }
   contentEl.classList.add('content-full');
   contentEl.innerHTML = `<div class="office-loading">${icon('loader','spin')} Загрузка DOCX…</div>`;
   const buf = await (await fetch(url)).arrayBuffer();
@@ -1372,7 +1409,10 @@ async function renderDocx(url) {
   wrapTables();
 }
 async function renderXlsx(url) {
-  if (typeof XLSX === 'undefined') { contentEl.innerHTML = '<p class="err">Библиотека SheetJS не загружена</p>'; return; }
+  if (typeof XLSX === 'undefined') {
+    try { await loadScriptOnce('vendor/xlsx.full.min.js'); }
+    catch (e) { contentEl.innerHTML = `<p class="err">Не удалось загрузить просмотрщик XLSX: ${escapeHtmlText(e.message)}</p>`; return; }
+  }
   contentEl.classList.add('content-full');
   contentEl.innerHTML = `<div class="office-loading">${icon('loader','spin')} Загрузка XLSX…</div>`;
   const buf = await (await fetch(url)).arrayBuffer();
@@ -1382,17 +1422,22 @@ async function renderXlsx(url) {
   const renderSheet = i => {
     const ws = wb.Sheets[wb.SheetNames[i]];
     const html = XLSX.utils.sheet_to_html(ws, { editable: false });
-    document.getElementById('xlsx-body').innerHTML = `<div class="xlsx-wrap">${html}</div>`;
+    // sheet_to_html НЕ экранирует значения ячеек в data-атрибутах: без sanitize
+    // это stored XSS через загруженный .xlsx (payload выходит из data-v).
+    document.getElementById('xlsx-body').innerHTML = `<div class="xlsx-wrap">${sanitize(html)}</div>`;
     contentEl.querySelectorAll('.sheet-tab').forEach(b => b.classList.toggle('active', +b.dataset.i === i));
   };
   contentEl.querySelectorAll('.sheet-tab').forEach(b => b.onclick = () => renderSheet(+b.dataset.i));
   renderSheet(0);
 }
 function renderOfficeFallback(url) {
-  const abs = location.origin + url;
-  const viewer = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(abs)}`;
+  // Внешний view.officeapps.live.com отправлял внутренний URL файла на сторонний
+  // сервис и в локальной сети всё равно не работал. Предлагаем скачать.
   contentEl.classList.add('content-full');
-  contentEl.innerHTML = `<iframe class="pdf-frame" src="${viewer}"></iframe>`;
+  contentEl.innerHTML = `<div class="office-fallback">
+    <p>Предпросмотр этого формата недоступен.</p>
+    <a class="btn primary" href="${encodeURI(url)}" download>Скачать файл</a>
+  </div>`;
 }
 
 /* Markdown */
@@ -1648,7 +1693,12 @@ document.getElementById('saveBtn').onclick = async () => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (modal.style.display !== 'none') document.getElementById('cancelBtn').click();
-    const sm = document.getElementById('searchModal'); if (sm && sm.style.display === 'flex') sm.style.display = 'none';
+    // Закрываем все остальные модалки/оверлеи, включая динамические
+    // (корзина, шары, палитра команд, контекстные меню, lightbox).
+    document.querySelectorAll('.modal, .lightbox, .ctx-menu, .punish-menu').forEach(el => {
+      if (el.style.display && el.style.display !== 'none') el.style.display = 'none';
+    });
+    document.body.classList.remove('sidebar-open');
   }
   if ((e.ctrlKey || e.metaKey) && e.key === 'f' && document.activeElement?.tagName !== 'TEXTAREA' && document.activeElement?.tagName !== 'INPUT') {
     e.preventDefault(); document.getElementById('searchBtn').click();
@@ -1784,19 +1834,24 @@ function initChat() {
 
   chatForm.onsubmit = async e => {
     e.preventDefault();
+    if (chatForm._sending) return;
     const text = chatInput.value.trim();
     const atts = state.pendingAttachments.general.slice();
     if (!text && !atts.length) return;
-    chatInput.value = ''; resetTextarea(chatInput); clearPendingAttachments('general');
+    chatForm._sending = true;
     try {
       const r = await fetch('/api/chat/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, attachments: atts }) });
       if (!r.ok) {
         const d = await r.json().catch(()=>({}));
         if (d.error === 'chat-disabled') return dlA('Общий чат отключён администрацией');
         if (d.error === 'muted') return dlA('Вы заглушены и не можете писать в общий чат');
-        showToast('Ошибка: ' + (d.error || r.statusText));
+        return showToast('Не отправлено: ' + (d.error || r.statusText));
       }
-    } catch { showToast('Ошибка сети'); }
+      // Очищаем только после успешной отправки — иначе при ошибке сети
+      // пользователь терял набранный текст и уже приложенные файлы.
+      chatInput.value = ''; resetTextarea(chatInput); clearPendingAttachments('general');
+    } catch { showToast('Не отправлено: ошибка сети. Текст сохранён.'); }
+    finally { chatForm._sending = false; }
   };
   chatInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); chatForm.requestSubmit(); } });
   autoGrow(chatInput);
@@ -1805,15 +1860,17 @@ function initChat() {
   const projInput = document.getElementById('projectChatInput');
   projForm.onsubmit = async e => {
     e.preventDefault();
-    if (!state.projectId) return;
+    if (!state.projectId || projForm._sending) return;
     const text = projInput.value.trim();
     const atts = state.pendingAttachments.project.slice();
     if (!text && !atts.length) return;
-    projInput.value = ''; resetTextarea(projInput); clearPendingAttachments('project');
+    projForm._sending = true;
     try {
       const r = await fetch(`/api/chat/project/${state.projectId}/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, attachments: atts }) });
-      if (!r.ok) { const d = await r.json().catch(()=>({})); showToast('Ошибка: ' + (d.error || r.statusText)); }
-    } catch { showToast('Ошибка сети'); }
+      if (!r.ok) { const d = await r.json().catch(()=>({})); return showToast('Не отправлено: ' + (d.error || r.statusText)); }
+      projInput.value = ''; resetTextarea(projInput); clearPendingAttachments('project');
+    } catch { showToast('Не отправлено: ошибка сети. Текст сохранён.'); }
+    finally { projForm._sending = false; }
   };
   projInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); projForm.requestSubmit(); } });
   autoGrow(projInput);
@@ -1822,14 +1879,17 @@ function initChat() {
   document.getElementById('ticketBackBtn').onclick = () => { state.currentTicketId = null; renderChatTabView(); };
   ticketForm.onsubmit = async e => {
     e.preventDefault();
+    if (ticketForm._sending) return;
     const text = ticketInput.value.trim();
     const atts = state.pendingAttachments.ticket.slice();
     if ((!text && !atts.length) || !state.currentTicketId) return;
-    ticketInput.value = ''; resetTextarea(ticketInput); clearPendingAttachments('ticket');
+    ticketForm._sending = true;
     try {
       const r = await fetch('/api/tickets/' + state.currentTicketId + '/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, attachments: atts }) });
-      if (!r.ok) { const d = await r.json().catch(()=>({})); showToast('Ошибка: ' + (d.error || r.statusText)); }
-    } catch { showToast('Ошибка сети'); }
+      if (!r.ok) { const d = await r.json().catch(()=>({})); return showToast('Не отправлено: ' + (d.error || r.statusText)); }
+      ticketInput.value = ''; resetTextarea(ticketInput); clearPendingAttachments('ticket');
+    } catch { showToast('Не отправлено: ошибка сети. Текст сохранён.'); }
+    finally { ticketForm._sending = false; }
   };
   ticketInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ticketForm.requestSubmit(); } });
   autoGrow(ticketInput);
@@ -1881,6 +1941,11 @@ async function uploadFileAsAttachment(key, file) {
   const MAX = 25 * 1024 * 1024;
   if (file.size > MAX) return dlA('Файл больше 25 МБ');
   const fd = new FormData(); fd.append('file', file);
+  // Контекст вложения: сервер проверит доступ по нему (IDOR-защита).
+  let scope = 'general';
+  if (key === 'project' && state.projectId) scope = 'project:' + state.projectId;
+  else if (key === 'ticket' && state.currentTicketId) scope = 'ticket:' + state.currentTicketId;
+  fd.append('scope', scope);
   try {
     const r = await fetch('/api/chat/attach', { method: 'POST', body: fd });
     const d = await r.json();
@@ -2314,9 +2379,12 @@ function initReports() {
   if (form) form.onsubmit = async e => {
     e.preventDefault();
     const reason = new FormData(form).get('reason');
+    // Путь берём из модалки: жалоба из контекстного меню могла относиться
+    // к другому файлу, чем открыт в просмотрщике.
+    const file = state.reportFilePath || state.currentFile || '';
     const r = await fetch('/api/reports', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason, file: state.currentFile || '', projectId: state.projectId })
+      body: JSON.stringify({ reason, file, projectId: state.projectId })
     });
     let d; try { d = await r.json(); } catch {}
     if (!r.ok) return dlA('Ошибка: ' + ((d && d.error) || r.statusText));
@@ -2434,7 +2502,9 @@ function buildShareRow(s, onChange) {
   return row;
 }
 function openReportModal(filePath) {
-  document.getElementById('reportFileLabel').textContent = filePath || '—';
+  const path = filePath || state.currentFile || '';
+  state.reportFilePath = path;
+  document.getElementById('reportFileLabel').textContent = path || '—';
   const form = document.getElementById('reportForm');
   form.reset();
   document.getElementById('reportModal').style.display = 'flex';
@@ -2482,7 +2552,7 @@ function buildInboxItem(it, tab) {
   const text = tab === 'requests' ? it.text : it.reason;
   const closedNote = it.status === 'closed' ? `<span>${icon('check','sm')} закрыто ${escapeHtml(it.closedBy || '')}</span>` : it.status === 'resolved' ? `<span>${icon('check','sm')} решено ${escapeHtml(it.resolvedBy || '')}</span>` : '';
   const filePath = it.file || '';
-  const fileHtml = filePath ? `<div class="file-line">${icon('file','sm')} <a href="#" class="file-link" data-file="${escapeHtml(filePath)}">${escapeHtml(filePath)}</a></div>` : `<div class="file-line" style="color:#ff8888">${icon('warning','sm')} Файл не указан</div>`;
+  const fileHtml = filePath ? `<div class="file-line">${icon('file','sm')} <a href="#" class="file-link" data-file="${escapeHtml(filePath)}">${escapeHtml(filePath)}</a></div>` : `<div class="file-line" style="color:var(--danger-fg)">${icon('warning','sm')} Файл не указан</div>`;
   const fromTag = state.user.role === 'admin' ? `<span class="who">${escapeHtml(it.from)} <button class="punish-btn" data-punish="${escapeHtml(it.from)}">${icon('gavel','sm')}</button></span>` : `<span class="who">${escapeHtml(it.from)}</span>`;
   el.innerHTML = `<div class="head">${fromTag}<span>${when}</span>${closedNote}</div>${fileHtml}<div class="text">${escapeHtml(text)}</div>`;
   const pb = el.querySelector('[data-punish]');
@@ -2942,6 +3012,13 @@ async function sendDarcusQuery(query, attachments) {
 /* Inline editor */
 async function openInlineEditor(file) {
   if (!file) return;
+  // Повторный клик «Ред.» по уже открытому файлу не должен перечитывать
+  // содержимое с сервера — это стирало набранный, но не сохранённый текст.
+  if (state.inlineEditFile === file) {
+    const areaEl = document.getElementById('inlineArea');
+    if (areaEl) areaEl.focus();
+    return;
+  }
   if (state.inlineEditFile && state.inlineEditFile !== file) {
     if (!(await dlC(`Уже открыт редактор «${state.inlineEditFile}». Закрыть без сохранения?`))) return;
     await leaveInlineEditor();
@@ -2970,6 +3047,8 @@ async function openEditorForInline(file) {
     ed.style.display = 'flex';
     document.getElementById('content').style.display = 'none';
     state.inlineEditFile = file;
+    // Пока идёт редактирование, повторная кнопка «Ред.» не нужна и опасна.
+    if (editBtn) editBtn.style.display = 'none';
     if (areaEl._resetInfPad) areaEl._resetInfPad();
     // [NEW] Сброс бесконечного скролла для нового файла
     if (areaEl._resetInfPad) areaEl._resetInfPad();
@@ -2996,18 +3075,20 @@ function removeInlineButtons() {
 async function saveInlineEditor() {
   const file = state.inlineEditFile; if (!file) return;
   const key = state.projectId + '::' + file;
-  delete state.drafts[key];
-  delete state.openEditors[key];
-  _persistDrafts();
   const areaEl = document.getElementById('inlineArea');
   const content = areaEl.value;
   try {
     const r = await fetch('/api/edit/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, content, projectId: state.projectId }) });
     if (!r.ok) { const d = await r.json().catch(() => ({})); return dlA('Ошибка сохранения: ' + (d.error || r.statusText)); }
+    // Черновик удаляем только после успешного сохранения.
+    delete state.drafts[key];
+    delete state.openEditors[key];
+    _persistDrafts();
     state.inlineEditFile = null;
     document.getElementById('inlineEditor').style.display = 'none';
     document.getElementById('content').style.display = '';
     removeInlineButtons();
+    restoreEditButton();
     await loadTree();
     await openFile(file);
   } catch (e) { dlA('Ошибка: ' + e.message); }
@@ -3020,19 +3101,26 @@ async function leaveInlineEditorSilent() {
   document.getElementById('inlineEditor').style.display = 'none';
   document.getElementById('content').style.display = '';
   removeInlineButtons();
+  restoreEditButton();
+}
+function restoreEditButton() {
+  if (!editBtn) return;
+  editBtn.style.display = canEditCurrentProject() ? '' : 'none';
 }
 async function leaveInlineEditor(confirmIt) {
   const file = state.inlineEditFile; if (!file) return;
   const key = state.projectId + '::' + file;
+  if (confirmIt && !(await dlC('Закрыть без сохранения?'))) return;
+  // Черновик удаляем только после подтверждения, а не до него.
   delete state.drafts[key];
   delete state.openEditors[key];
   _persistDrafts();
-  if (confirmIt && !(await dlC('Закрыть без сохранения?'))) return;
   try { await fetch('/api/edit/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, projectId: state.projectId }) }); } catch {}
   state.inlineEditFile = null;
   document.getElementById('inlineEditor').style.display = 'none';
   document.getElementById('content').style.display = '';
   removeInlineButtons();
+  restoreEditButton();
   if (state.currentFile === file) await openFile(file);
 }
 function inlineUpdatePreview() {

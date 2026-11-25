@@ -55,16 +55,69 @@ try { for (const f of fs.readdirSync(TMP_DIR)) fs.unlinkSync(path.join(TMP_DIR, 
 
 const TEXT_EXT = ['md','markdown','txt','js','json','css','html','xml','csv','log','yml','yaml','ts','sh','env','ini','conf'];
 const isTextFile = n => TEXT_EXT.includes(String(n).split('.').pop().toLowerCase());
-const RISKY_EXT = ['html','htm','xhtml','xml','js','mjs','jsx','ts','tsx','vbs','hta','chm','jar','swf'];
-const SVG_EXT = ['svg'];
+// Отдача файлов проекта: по умолчанию всё скачивается, инлайн — только безопасное.
+// Раньше .shtml/.xht/.svgz не попадали ни в RISKY_EXT, ни в SVG_EXT, и браузер
+// открывал их как text/html / image/svg+xml прямо в origin приложения (stored XSS).
+const INLINE_IMAGE_EXT = new Set(['png','jpg','jpeg','gif','webp','bmp','ico']);
+const INLINE_SVG_EXT   = new Set(['svg']);
+const INLINE_PDF_EXT   = new Set(['pdf']);
+const TEXT_PLAIN_EXT   = new Set([
+  'md','markdown','txt','csv','log','json','yml','yaml','ini','conf','sh','env',
+  'html','htm','shtml','xhtml','xht','xml','js','mjs','cjs','jsx','ts','tsx',
+  'vbs','hta','chm','jar','swf','css','svgz','bat','ps1','py','sql',
+]);
 
-/* ---------- JSON helpers ---------- */
-function loadJSON(file, def) {
-  try { if (!fs.existsSync(file)) return def; return JSON.parse(fs.readFileSync(file, 'utf8')); }
-  catch { return def; }
+/* ---------- JSON helpers ----------
+   - атомарная запись: tmp → fsync → rename (никаких «полузаписанных» файлов);
+   - перед перезаписью сохраняется .bak (одна копия);
+   - при повреждении JSON пробуем восстановиться из .bak, иначе падаем явно,
+     вместо тихой подмены пустым значением (это приводило к потере БД). */
+function atomicWriteFile(file, content) {
+  const dir = path.dirname(file);
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  const tmp = path.join(dir, `.${path.basename(file)}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`);
+  let fd = null;
+  try {
+    fd = fs.openSync(tmp, 'w');
+    fs.writeFileSync(fd, content, 'utf8');
+    try { fs.fsyncSync(fd); } catch {}
+    fs.closeSync(fd); fd = null;
+    if (fs.existsSync(file)) { try { fs.copyFileSync(file, file + '.bak'); } catch {} }
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    if (fd !== null) { try { fs.closeSync(fd); } catch {} }
+    try { fs.unlinkSync(tmp); } catch {}
+    throw e;
+  }
 }
+
+function loadJSON(file, def) {
+  if (!fs.existsSync(file)) return def;
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    const bak = file + '.bak';
+    if (fs.existsSync(bak)) {
+      try {
+        const restored = JSON.parse(fs.readFileSync(bak, 'utf8'));
+        try { fs.copyFileSync(file, file + '.corrupt-' + Date.now()); } catch {}
+        try { fs.copyFileSync(bak, file); } catch {}
+        logger.warn({ file, err: e.message }, 'JSON повреждён — восстановлен из .bak');
+        return restored;
+      } catch {}
+    }
+    logger.error({ file, err: e.message }, 'JSON повреждён и резервная копия недоступна');
+    throw new Error(`Повреждён файл данных: ${path.basename(file)}. Остановитесь и восстановите из бэкапа.`);
+  }
+}
+
 function saveJSON(file, data) {
-  try { fs.writeFileSync(file, JSON.stringify(data, null, 2)); } catch (e) { logger.error({ err: e.message, file }, 'saveJSON failed'); }
+  try {
+    atomicWriteFile(file, JSON.stringify(data, null, 2));
+  } catch (e) {
+    logger.error({ err: e.message, file }, 'saveJSON failed');
+    throw e;
+  }
 }
 
 /* ---------- Пользователи ---------- */
@@ -72,24 +125,26 @@ let usersCache = null;
 function loadUsers() {
   if (usersCache) return usersCache;
   if (!fs.existsSync(USERS_FILE)) {
-    const tempPassword = 'admin123';
+    // Первый запуск: пароль берём из ADMIN_PASSWORD, иначе генерируем случайный.
+    // Пароль печатаем ТОЛЬКО в консоль (не в data/log.txt).
+    const tempPassword = cfg.admin.initialPassword || crypto.randomBytes(12).toString('base64url');
     const initial = { users: [{
-      id: crypto.randomUUID(), username: 'admin',
+      id: crypto.randomUUID(), username: cfg.admin.username,
       password: bcrypt.hashSync(tempPassword, 10),
-      role: 'admin', theme: 'dark',
+      role: 'admin', theme: 'dark', mustChangePassword: true,
       createdAt: new Date().toISOString()
     }]};
-    fs.writeFileSync(USERS_FILE, JSON.stringify(initial, null, 2));
-    logger.warn({ tempPassword }, 'Создан admin — обязательно смени пароль после первого входа!');
+    atomicWriteFile(USERS_FILE, JSON.stringify(initial, null, 2));
+    console.warn('[bootstrap] Создан администратор "' + cfg.admin.username + '". Пароль: ' + tempPassword + ' — смените его после первого входа.');
     usersCache = initial;
     return initial;
   }
-  try { usersCache = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); }
-  catch { usersCache = { users: [] }; }
+  usersCache = loadJSON(USERS_FILE, { users: [] });
+  if (!Array.isArray(usersCache.users)) usersCache.users = [];
   return usersCache;
 }
 const saveUsers = d => {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(d, null, 2));
+  saveJSON(USERS_FILE, d);
   usersCache = null;
 };
 
@@ -124,19 +179,21 @@ function logChange(entry) {
 function loadSettings() {
   if (!fs.existsSync(SETTINGS_FILE)) {
     const def = { uploadLimitMB: cfg.limits.uploadDefaultMB, generalChatMode: 'everyone' };
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(def, null, 2));
+    try { atomicWriteFile(SETTINGS_FILE, JSON.stringify(def, null, 2)); } catch {}
     return def;
   }
   try {
-    const s = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    const s = loadJSON(SETTINGS_FILE, {});
     if (!s.generalChatMode) s.generalChatMode = 'everyone';
     if (s.uploadLimitMB === undefined) s.uploadLimitMB = cfg.limits.uploadDefaultMB;
     return s;
-  } catch {
+  } catch (e) {
+    // Не затираем повреждённый файл дефолтом: работаем на дефолтах и громко логируем.
+    logger.error({ err: e.message }, 'settings: используются значения по умолчанию');
     return { uploadLimitMB: cfg.limits.uploadDefaultMB, generalChatMode: 'everyone' };
   }
 }
-const saveSettings = d => fs.writeFileSync(SETTINGS_FILE, JSON.stringify(d, null, 2));
+const saveSettings = d => atomicWriteFile(SETTINGS_FILE, JSON.stringify(d, null, 2));
 
 /* ---------- Приглашения ---------- */
 const loadInvites = () => loadJSON(INVITES_FILE, { codes: [] });
@@ -196,22 +253,22 @@ function loadProjects() {
   if (projectsCache) return projectsCache;
   if (!fs.existsSync(PROJECTS_FILE)) {
     const def = { projects: [{
-      id: 'default', name: 'Основной', folder: 'default', creator: 'admin',
-      members: [{ username: 'admin', role: 'creator' }],
+      id: 'default', name: 'Основной', folder: 'default', creator: cfg.admin.username,
+      members: [{ username: cfg.admin.username, role: 'creator' }],
       createdAt: new Date().toISOString()
     }]};
-    fs.writeFileSync(PROJECTS_FILE, JSON.stringify(def, null, 2));
+    atomicWriteFile(PROJECTS_FILE, JSON.stringify(def, null, 2));
     if (!fs.existsSync(path.join(PROJECTS_ROOT, 'default')))
       fs.mkdirSync(path.join(PROJECTS_ROOT, 'default'), { recursive: true });
     projectsCache = def;
     return def;
   }
-  try { projectsCache = JSON.parse(fs.readFileSync(PROJECTS_FILE, 'utf8')); }
-  catch { projectsCache = { projects: [] }; }
+  projectsCache = loadJSON(PROJECTS_FILE, { projects: [] });
+  if (!Array.isArray(projectsCache.projects)) projectsCache.projects = [];
   return projectsCache;
 }
 const saveProjects = d => {
-  fs.writeFileSync(PROJECTS_FILE, JSON.stringify(d, null, 2));
+  saveJSON(PROJECTS_FILE, d);
   projectsCache = null;
 };
 
@@ -317,24 +374,52 @@ function isImageMime(mime, name) {
   return ['png','jpg','jpeg','gif','webp','bmp','svg','ico'].includes(ext);
 }
 
-/* ---------- Телеметрия ---------- */
+/* ---------- Телеметрия ----------
+   Раньше файл на каждого пользователя читался/парсился/писался на КАЖДЫЙ
+   авторизованный запрос (до 5,6 мс блокировки event loop). Теперь события
+   копятся в памяти и сбрасываются пачкой раз в telemetryFlushMs. */
+const telemetryQueue = new Map(); // username -> { events: [] }
+let telemetryFlushTimer = null;
+
 function telemetryPath(username) {
   const safe = String(username).replace(/[^\w.\-@]/g, '_');
   return path.join(TELEMETRY_DIR, safe + '.json');
 }
+
+function flushTelemetry() {
+  if (telemetryFlushTimer) { clearTimeout(telemetryFlushTimer); telemetryFlushTimer = null; }
+  for (const [username, rec] of telemetryQueue) {
+    if (!rec.events.length) continue;
+    const file = telemetryPath(username);
+    try {
+      let data;
+      if (fs.existsSync(file)) data = loadJSON(file, {});
+      if (!data || !Array.isArray(data.events)) data = { username, firstSeen: new Date().toISOString(), events: [] };
+      data.events.push(...rec.events);
+      const max = cfg.limits.telemetryMaxEvents;
+      if (data.events.length > max) data.events = data.events.slice(-max);
+      data.lastSeen = new Date().toISOString();
+      atomicWriteFile(file, JSON.stringify(data, null, 2));
+    } catch (e) {
+      logger.warn({ err: e.message, user: username }, 'telemetry flush failed');
+    }
+  }
+  telemetryQueue.clear();
+}
+
 function telemetryAppend(username, event) {
   if (!username) return;
-  const file = telemetryPath(username);
-  let data;
-  try {
-    if (fs.existsSync(file)) data = JSON.parse(fs.readFileSync(file, 'utf8'));
-    else data = { username, firstSeen: new Date().toISOString(), events: [] };
-  } catch { data = { username, firstSeen: new Date().toISOString(), events: [] }; }
-  data.lastSeen = new Date().toISOString();
-  data.events.push({ ts: new Date().toISOString(), ...event });
-  if (data.events.length > cfg.limits.logMaxEntries) data.events = data.events.slice(-cfg.limits.logMaxEntries);
-  try { fs.writeFileSync(file, JSON.stringify(data, null, 2)); } catch {}
+  let rec = telemetryQueue.get(username);
+  if (!rec) { rec = { events: [] }; telemetryQueue.set(username, rec); }
+  rec.events.push({ ts: new Date().toISOString(), ...event });
+  if (!telemetryFlushTimer) {
+    telemetryFlushTimer = setTimeout(flushTelemetry, cfg.limits.telemetryFlushMs);
+    if (telemetryFlushTimer.unref) telemetryFlushTimer.unref();
+  }
 }
+process.on('exit', () => { try { flushTelemetry(); } catch {} });
+process.on('SIGINT', () => { try { flushTelemetry(); } catch {} process.exit(0); });
+process.on('SIGTERM', () => { try { flushTelemetry(); } catch {} process.exit(0); });
 
 /* ---------- SSE ---------- */
 const sseClients = new Map();
@@ -342,31 +427,47 @@ const editSessions = new Map();
 
 function sseAdd(u, res) {
   if (!sseClients.has(u)) sseClients.set(u, new Set());
-  sseClients.get(u).add(res);
+  const set = sseClients.get(u);
+  // Не даём одному пользователю открыть неограниченное число потоков.
+  const max = cfg.limits.maxSsePerUser || 5;
+  while (set.size >= max) {
+    const old = set.values().next().value;
+    set.delete(old);
+    try { old.end(); } catch {}
+  }
+  set.add(res);
 }
+
+function flushEditSession(key, sess) {
+  if (sess.saveTimer) { clearTimeout(sess.saveTimer); sess.saveTimer = null; }
+  try {
+    const project = loadProjects().projects.find(p => p.id === sess.projectId);
+    if (!project) return;
+    const full = safeJoin(projectFolder(project), sess.file);
+    // Пишем актуальное содержимое, а не baseline: иначе закрытая вкладка
+    // молча откатывала уже автосохранённый текст.
+    fs.writeFileSync(full, sess.content, 'utf8');
+    logChange({ user: 'system', action: 'edit', file: sess.file, projectId: sess.projectId,
+      before: sess.baseline, after: sess.content, details: 'autosave on session end' });
+  } catch (e) { logger.warn({ err: e.message, key }, 'edit session flush failed'); }
+}
+
 function sseRemove(u, res) {
   const s = sseClients.get(u);
   if (!s) return;
   s.delete(res);
-  if (!s.size) {
-    sseClients.delete(u);
-    for (const [key, sess] of editSessions) {
-      if (sess.users.has(u)) {
-        if (sess.saveTimer) { clearTimeout(sess.saveTimer); sess.saveTimer = null; }
-        sess.users.delete(u);
-        if (sess.users.size === 0) {
-          try {
-            const project = loadProjects().projects.find(p => p.id === sess.projectId);
-            if (project) {
-              const full = safeJoin(projectFolder(project), sess.file);
-              fs.writeFileSync(full, sess.baseline, 'utf8');
-            }
-          } catch {}
-          editSessions.delete(key);
-        } else {
-          sseBroadcastExcept('edit-users', { key, projectId: sess.projectId, file: sess.file, users: [...sess.users.keys()] }, []);
-        }
-      }
+  if (s.size) return;
+  sseClients.delete(u);
+  for (const [key, sess] of editSessions) {
+    if (!sess.users.has(u)) continue;
+    if (sess.saveTimer) { clearTimeout(sess.saveTimer); sess.saveTimer = null; }
+    sess.users.delete(u);
+    if (sess.users.size === 0) {
+      flushEditSession(key, sess);
+      editSessions.delete(key);
+    } else {
+      sseSendTo([...sess.users.keys()], 'edit-users',
+        { key, projectId: sess.projectId, file: sess.file, users: [...sess.users.keys()] });
     }
   }
 }
@@ -426,6 +527,15 @@ app.use((req, res, next) => {
 });
 
 // [SEC] Access log через logger
+const STATIC_ASSET_RE = /\.(js|css|png|jpe?g|gif|webp|bmp|svg|ico|woff2?|ttf|eot|map)$/i;
+
+function redactUrl(url) {
+  // share-токены и прочие секреты не должны оседать в логах
+  return String(url)
+    .replace(/^\/s\/[^/?#]+/, '/s/[redacted]')
+    .replace(/([?&](?:token|invite|code|secret)=)[^&#]+/gi, '$1[redacted]');
+}
+
 app.use((req, res, next) => {
   const start = Date.now();
   const ip = req.ip || req.connection?.remoteAddress || '-';
@@ -433,16 +543,21 @@ app.use((req, res, next) => {
   const ref = req.headers['referer'] || '-';
   res.on('finish', () => {
     const ms = Date.now() - start;
+    const status = res.statusCode;
     const username = req.user?.username || '-';
     const role = req.user?.role || '-';
-    writeAccessLog({
-      method: req.method, url: req.originalUrl, status: res.statusCode, ms,
-      user: username, role, ip, ua, ref,
-    });
-    if (username !== '-') {
+    // 304 и статика — 80% строк лога без диагностической ценности.
+    const isStatic = STATIC_ASSET_RE.test(req.path) || req.path.startsWith('/api/ads/file/');
+    if (status !== 304 && !isStatic) {
+      writeAccessLog({
+        method: req.method, url: redactUrl(req.originalUrl), status, ms,
+        user: username, role, ip, ua, ref,
+      });
+    }
+    if (username !== '-' && status !== 304 && !isStatic) {
       telemetryAppend(username, {
-        type: 'request', method: req.method, path: req.originalUrl,
-        status: res.statusCode, ms, ip, ua,
+        type: 'request', method: req.method, path: redactUrl(req.originalUrl),
+        status, ms, ip, ua,
       });
     }
   });
@@ -465,12 +580,14 @@ app.use((req, res, next) => {
       'Content-Security-Policy',
       [
         "default-src 'self'",
-        "script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'",
+        // Все скрипты — только локальные файлы; inline-скрипты вынесены в js/*.js.
+        "script-src 'self'",
+        "script-src-attr 'none'",
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: blob: https://cdn.jsdelivr.net",
+        "img-src 'self' data: blob:",
         "font-src 'self' data:",
         "connect-src 'self'",
-        "frame-src 'self' https://view.officeapps.live.com",
+        "frame-src 'self'",
         "object-src 'none'",
         "base-uri 'self'",
         "form-action 'self'",
@@ -490,8 +607,9 @@ const requireRole = (...roles) => (req, res, next) => {
 };
 const requireSelfAdmin = (req, res, next) => {
   if (!req.user) return res.status(401).json({ error: 'unauthorized' });
-  if (req.user.role !== 'admin' || req.user.username !== 'admin')
-    return res.status(403).json({ error: 'forbidden' });
+  // Раньше требовался ещё и логин «admin» — это ломало админку,
+  // если администратора переименовали или завели второго.
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
   next();
 };
 const requireNotMutedGeneral = (req, res, next) => {
@@ -714,11 +832,12 @@ app.patch('/api/account/theme', requireAuth, (req, res) => {
 
 app.post('/api/telemetry/client', requireAuth, (req, res) => {
   const b = req.body || {};
+  const f = v => String(v == null ? '' : v).slice(0, 200);
   telemetryAppend(req.user.username, {
     type: 'client-info',
-    screen: b.screen, viewport: b.viewport, lang: b.lang,
-    tz: b.tz, platform: b.platform, referrer: b.referrer,
-    ip: req.ip || '-', ua: req.headers['user-agent'] || '-',
+    screen: f(b.screen), viewport: f(b.viewport), lang: f(b.lang),
+    tz: f(b.tz), platform: f(b.platform), referrer: f(b.referrer),
+    ip: req.ip || '-', ua: String(req.headers['user-agent'] || '-').slice(0, 300),
   });
   res.json({ ok: true });
 });
@@ -791,7 +910,14 @@ app.patch('/api/users/:id', requireRole('admin'), (req, res) => {
   const user = data.users.find(u => u.id === req.params.id);
   if (!user) return res.status(404).json({ error: 'not found' });
   const { password, role } = req.body || {};
-  if (role && ['member','admin'].includes(role)) user.role = role;
+  if (role && !['member','admin'].includes(role))
+    return res.status(400).json({ error: 'Неизвестная роль' });
+  if (role && user.role === 'admin' && role !== 'admin') {
+    const admins = data.users.filter(u => u.role === 'admin');
+    if (admins.length <= 1)
+      return res.status(400).json({ error: 'Нельзя снять роль с последнего администратора' });
+  }
+  if (role) user.role = role;
   if (password) {
     const pwdCheck = validatePassword(password, user.username);
     if (!pwdCheck.ok) return res.status(400).json({ error: pwdCheck.error });
@@ -809,6 +935,8 @@ app.delete('/api/users/:id', requireRole('admin'), (req, res) => {
   if (idx === -1) return res.status(404).json({ error: 'not found' });
   if (data.users[idx].id === req.user.id)
     return res.status(400).json({ error: 'cannot delete self' });
+  if (data.users[idx].role === 'admin' && data.users.filter(u => u.role === 'admin').length <= 1)
+    return res.status(400).json({ error: 'Нельзя удалить последнего администратора' });
   const [removed] = data.users.splice(idx, 1);
   saveUsers(data);
   logChange({ user: req.user.username, action: 'user-delete', target: removed.username });
@@ -1081,12 +1209,20 @@ app.get('/api/changes', requireRole('admin'), (req, res) => {
   if (projectId) entries = entries.filter(e => e.projectId === projectId);
   if (file) entries = entries.filter(e => e.file === file);
   if (days) {
-    const since = Date.now() - parseInt(days) * 86400 * 1000;
-    entries = entries.filter(e => new Date(e.timestamp).getTime() >= since);
+    const d = parseInt(days, 10);
+    if (Number.isFinite(d) && d > 0) {
+      const since = Date.now() - d * 86400 * 1000;
+      entries = entries.filter(e => new Date(e.timestamp).getTime() >= since);
+    }
   }
   entries = entries.slice().reverse();
+  // Полные before/after тяжёлые: не отдаём всю историю целиком.
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || (full === '1' ? 100 : 500), 1), 500);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+  const total = entries.length;
+  entries = entries.slice(offset, offset + limit);
   if (full !== '1') entries = entries.map(({ before, after, ...r }) => r);
-  res.json({ entries });
+  res.json({ entries, total, limit, offset });
 });
 
 app.post('/api/revert/:id', requireRole('admin'), (req, res) => {
@@ -1175,11 +1311,52 @@ app.patch('/api/settings', requireRole('admin'), (req, res) => {
 
 /* ---------- Статика ---------- */
 app.use(express.static(path.join(__dirname, 'public'), {
-  etag: false, lastModified: false,
-  setHeaders: (res) => res.setHeader('Cache-Control', 'no-store, must-revalidate'),
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    // Вендоренные библиотеки неизменяемы, остальное — ревалидация по ETag.
+    if (/[\\/]vendor[\\/]/.test(filePath))
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    else
+      res.setHeader('Cache-Control', 'no-cache');
+  },
 }));
 
-/* ---------- Файлы ---------- */
+/* ---------- Отдача файлов проекта ---------- */
+function sendProjectFile(res, realPath) {
+  const ext = path.extname(realPath).slice(1).toLowerCase();
+  const base = path.basename(realPath);
+  const disposition = (type) =>
+    `${type}; filename*=UTF-8''${encodeURIComponent(base)}`;
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+
+  if (INLINE_IMAGE_EXT.has(ext)) return res.sendFile(realPath);
+
+  if (INLINE_SVG_EXT.has(ext)) {
+    // SVG может содержать скрипты: отдаём инлайн только с закрытым CSP.
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Content-Security-Policy',
+      "default-src 'none'; style-src 'unsafe-inline'; img-src data:");
+    return res.sendFile(realPath);
+  }
+
+  if (INLINE_PDF_EXT.has(ext)) {
+    res.setHeader('Content-Type', 'application/pdf');
+    return res.sendFile(realPath);
+  }
+
+  if (TEXT_PLAIN_EXT.has(ext)) {
+    // HTML/JS/SVGZ и прочее «рискованное» — только как текст, без исполнения.
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', disposition('inline'));
+    return res.sendFile(realPath);
+  }
+
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', disposition('attachment'));
+  return res.sendFile(realPath);
+}
+
 app.get('/files/:projectId/{*filePath}', requireAuth, (req, res) => {
   const project = loadProjects().projects.find(p => p.id === req.params.projectId);
   if (!project || !canReadProject(req.user, project))
@@ -1187,10 +1364,8 @@ app.get('/files/:projectId/{*filePath}', requireAuth, (req, res) => {
   let raw = req.params.filePath;
   if (Array.isArray(raw)) raw = raw.join('/');
   if (typeof raw !== 'string') raw = '';
-  let rel;
-  try { rel = decodeURIComponent(raw); }
-  catch { return res.status(400).send('bad path'); }
-  rel = rel.replace(/^\/+/, '');
+  // Express 5 уже декодировал param — повторный decodeURIComponent ломал имена с «%».
+  const rel = raw.replace(/^\/+/, '');
   const root = projectFolder(project);
   let full;
   try { full = safeJoin(root, rel); } catch { return res.status(400).send('bad path'); }
@@ -1200,16 +1375,7 @@ app.get('/files/:projectId/{*filePath}', requireAuth, (req, res) => {
       return res.status(403).send('forbidden');
     fs.stat(real, (err2, st) => {
       if (err2 || !st.isFile()) return res.status(404).send('not found');
-      const ext = path.extname(real).slice(1).toLowerCase();
-      if (RISKY_EXT.includes(ext)) {
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.setHeader('Content-Disposition',
-          `inline; filename*=UTF-8''${encodeURIComponent(path.basename(real))}`);
-      } else if (SVG_EXT.includes(ext)) {
-        res.setHeader('Content-Type', 'image/svg+xml');
-        res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:");
-      }
-      res.sendFile(real);
+      sendProjectFile(res, real);
     });
   });
 });
@@ -1282,16 +1448,7 @@ app.get('/s/:token', rateLimitShareAccess, (req, res) => {
       entry.accessCount = (entry.accessCount || 0) + 1;
       entry.lastAccessAt = new Date().toISOString();
       saveShares(data);
-      const ext = path.extname(real).slice(1).toLowerCase();
-      if (RISKY_EXT.includes(ext)) {
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.setHeader('Content-Disposition',
-          `inline; filename*=UTF-8''${encodeURIComponent(path.basename(real))}`);
-      } else if (SVG_EXT.includes(ext)) {
-        res.setHeader('Content-Type', 'image/svg+xml');
-        res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:");
-      }
-      res.sendFile(real);
+      sendProjectFile(res, real);
     });
   });
 });
@@ -1607,8 +1764,6 @@ app.delete('/api/delete', requireAuth, projectGuard('edit', 'query'), (req, res)
   logChange({ user: req.user.username, action: 'delete', file: rel, isDir: st.isDirectory(),
     projectId: req.project.id, details: `в корзину (${TRASH_RETENTION_DAYS} дн.)` });
   try { darcus.invalidateFileCache(req.project.id, rel); } catch {}
-  logChange({ user: req.user.username, action: 'delete', file: rel, isDir: st.isDirectory(),
-    projectId: req.project.id, details: `в корзину (${TRASH_RETENTION_DAYS} дн.)` });
   res.json({ ok: true, trashId });
 });
 
@@ -1636,7 +1791,6 @@ app.post('/api/trash/:id/restore', requireAuth, (req, res) => {
   // Файл вернулся на исходное место — сразу переиндексируем его.
   try { darcus.invalidateFileCache(project.id, item.originalPath); } catch {}
   try { refreshEmbedIndex(project.id, item.originalPath, dest); } catch {}
-  try { refreshEmbedIndex(project.id, item.originalPath, dest); } catch {}  
   data.items = data.items.filter(it => it.id !== item.id);
   saveTrash(data);
   logChange({ user: req.user.username, action: 'restore', file: item.originalPath, projectId: project.id });
@@ -1697,6 +1851,18 @@ app.post('/api/move', requireAuth, projectGuard('edit', 'body'), (req, res) => {
 
 /* ---------- Upload ---------- */
 const upload = multer({ dest: TMP_DIR, limits: { fileSize: 2 * 1024 * 1024 * 1024 } });
+
+// Если запрос отклонён после того, как multer уже записал файл (403/404/400),
+// удаляем временный файл. Раньше data/tmp забивался мусором до рестарта.
+function cleanupRejectedUpload(req, res, next) {
+  res.on('finish', () => {
+    if (res.statusCode >= 400 && req.file && req.file.path) {
+      fs.unlink(req.file.path, () => {});
+    }
+  });
+  next();
+}
+
 app.post('/api/upload', requireAuth, rateLimitUpload,
   (req, res, next) => {
     // Отсекаем заведомо большие запросы до записи на диск.
@@ -1714,10 +1880,11 @@ app.post('/api/upload', requireAuth, rateLimitUpload,
     if (err) {
       if (err.code === 'LIMIT_FILE_SIZE')
         return res.status(413).json({ error: 'Файл превышает жёсткий лимит сервера' });
-      return res.status(500).json({ error: err.message || 'Ошибка загрузки' });
+      return res.status(400).json({ error: err.message || 'Ошибка загрузки' });
     }
     next();
   }),
+  cleanupRejectedUpload,
   projectGuard('edit', 'body'),
   (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Файл не получен' });
@@ -2089,7 +2256,7 @@ app.post('/api/edit/join', requireAuth, projectGuard('edit', 'body'), (req, res)
   const s = getOrCreateSession(key, req.project, file);
   s.users.set(req.user.username, { joinedAt: Date.now() });
   const usersList = [...s.users.keys()];
-  sseBroadcastExcept('edit-users', { key, projectId: req.project.id, file, users: usersList }, [req.user.username]);
+  sseSendTo(usersList, 'edit-users', { key, projectId: req.project.id, file, users: usersList });
   res.json({ baseline: s.baseline, content: s.content, users: usersList });
 });
 
@@ -2104,7 +2271,9 @@ app.post('/api/edit/change', requireAuth, projectGuard('edit', 'body'), (req, re
   if (!s) return res.status(410).json({ error: 'session ended' });
   s.content = content;
   scheduleSessionSave(key);
-  sseBroadcastExcept('edit-change', { key, projectId: req.project.id, file, content, from: req.user.username }, [req.user.username]);
+  // Только участники этой сессии, а не все SSE-клиенты сервера.
+  sseSendTo([...s.users.keys()], 'edit-change',
+    { key, projectId: req.project.id, file, content, from: req.user.username });
   res.json({ ok: true });
 });
 
@@ -2126,8 +2295,8 @@ app.post('/api/edit/save', requireAuth, projectGuard('edit', 'body'), (req, res)
   try { refreshEmbedIndex(req.project.id, file, full); } catch {}
   s.users.delete(req.user.username);
   const usersList = [...s.users.keys()];
-  sseBroadcastExcept('edit-users', { key, projectId: req.project.id, file, users: usersList }, [req.user.username]);
-  sseBroadcastExcept('edit-saved', { key, projectId: req.project.id, file, by: req.user.username }, [req.user.username]);
+  sseSendTo(usersList, 'edit-users', { key, projectId: req.project.id, file, users: usersList });
+  sseSendTo(usersList, 'edit-saved', { key, projectId: req.project.id, file, by: req.user.username });
   if (s.users.size === 0) editSessions.delete(key);
   res.json({ ok: true });
 });
@@ -2138,20 +2307,15 @@ app.post('/api/edit/leave', requireAuth, projectGuard('edit', 'body'), (req, res
   const key = editKey(projectId, file);
   const s = editSessions.get(key);
   if (!s) return res.json({ ok: true });
-  if (s.saveTimer) { clearTimeout(s.saveTimer); s.saveTimer = null; }
   s.users.delete(req.user.username);
   if (s.users.size === 0) {
-    const project = loadProjects().projects.find(p => p.id === projectId);
-    if (project) {
-      try {
-        const full = safeJoin(projectFolder(project), file);
-        fs.writeFileSync(full, s.baseline, 'utf8');
-      } catch {}
-    }
+    // Сохраняем то, что пользователь набрал (а не baseline): иначе закрытие
+    // вкладки/обрыв сети молча откатывали уже автосохранённый текст.
+    flushEditSession(key, s);
     editSessions.delete(key);
   } else {
     const usersList = [...s.users.keys()];
-    sseBroadcastExcept('edit-users', { key, projectId, file, users: usersList }, [req.user.username]);
+    sseSendTo(usersList, 'edit-users', { key, projectId, file, users: usersList });
   }
   res.json({ ok: true });
 });
@@ -2303,6 +2467,10 @@ app.post('/api/chat/attach',
     const safe = safeFileName(origName);
     const mime = req.file.mimetype || 'application/octet-stream';
     const isImg = isImageMime(mime, safe);
+    // Контекст вложения: general | project:<id> | ticket:<id>.
+    // Нужен, чтобы не отдавать чужие вложения по id (IDOR).
+    const rawScope = String(req.body?.scope || '').slice(0, 120);
+    const scope = /^(general|project|ticket):?[A-Za-z0-9_-]*$/.test(rawScope) ? rawScope : 'general';
     const att = {
       id,
       storedName: req.file.filename,
@@ -2310,6 +2478,7 @@ app.post('/api/chat/attach',
       size: req.file.size,
       mime,
       kind: isImg ? 'image' : 'file',
+      scope,
       uploadedBy: req.user.username,
       uploadedAt: new Date().toISOString(),
     };
@@ -2352,9 +2521,26 @@ app.get('/api/chat/attach/:id', requireAuth, (req, res) => {
   const full = path.join(ATTACH_DIR, att.storedName);
   if (!fs.existsSync(full)) return res.status(404).end();
 
-  // [SEC] Defense-in-depth: логируем доступ к чужому вложению (IDOR-мониторинг).
-  if (req.user.role !== 'admin' && att.uploadedBy !== req.user.username) {
-    telemetryAppend(req.user.username, { type: 'attach-access-foreign', attId: att.id });
+  // Доступ: владелец, администратор или тот, кто вправе видеть контейнер
+  // (общий чат / проект / тикет). Раньше любой авторизованный читал чужой файл по id.
+  const isAdmin = req.user.role === 'admin';
+  const isOwner = att.uploadedBy === req.user.username;
+  let allowed = isAdmin || isOwner;
+  if (!allowed && att.scope) {
+    if (att.scope === 'general') {
+      allowed = true;
+    } else if (att.scope.startsWith('project:')) {
+      const project = loadProjects().projects.find(p => p.id === att.scope.slice('project:'.length));
+      allowed = canReadProject(req.user, project);
+    } else if (att.scope.startsWith('ticket:')) {
+      const ticket = loadJSON(TICKETS_FILE, { tickets: [] }).tickets
+        .find(t => t.id === att.scope.slice('ticket:'.length));
+      allowed = !!ticket && (ticket.from === req.user.username || ticket.acceptedBy === req.user.username);
+    }
+  }
+  if (!allowed) {
+    telemetryAppend(req.user.username, { type: 'attach-access-denied', attId: att.id });
+    return res.status(403).end();
   }
 
   const ext = (path.extname(att.originalName).slice(1) || '').toLowerCase();
@@ -2382,6 +2568,13 @@ app.post('/api/projects/:projectId/attach-file',
     const data = loadAttachments();
     const att = data.items[attachmentId];
     if (!att) return res.status(404).json({ error: 'attachment not found' });
+    // Копировать в проект можно только своё вложение, вложение из этого же
+    // проекта или (для админа) любое. Иначе это IDOR-кража чужого файла.
+    const isAdmin = req.user.role === 'admin';
+    const isOwner = att.uploadedBy === req.user.username;
+    const sameProject = att.scope === 'project:' + req.project.id;
+    if (!isAdmin && !isOwner && !sameProject)
+      return res.status(403).json({ error: 'forbidden' });
     const src = path.join(ATTACH_DIR, att.storedName);
     if (!fs.existsSync(src)) return res.status(404).json({ error: 'file missing' });
     let dirFull; try { dirFull = safeJoin(req.projectRoot, dir); } catch {
@@ -2435,7 +2628,7 @@ app.post('/api/telemetry/:username/clear', requireSelfAdmin, (req, res) => {
   const file = telemetryPath(req.params.username);
   if (!fs.existsSync(file)) return res.status(404).json({ error: 'not found' });
   try {
-    fs.writeFileSync(file, JSON.stringify({
+    atomicWriteFile(file, JSON.stringify({
       username: req.params.username,
       firstSeen: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
@@ -2459,7 +2652,7 @@ const DEFAULT_ADS = {
 };
 function loadAds() {
   if (!fs.existsSync(ADS_FILE)) {
-    fs.writeFileSync(ADS_FILE, JSON.stringify(DEFAULT_ADS, null, 2));
+    atomicWriteFile(ADS_FILE, JSON.stringify(DEFAULT_ADS, null, 2));
     return JSON.parse(JSON.stringify(DEFAULT_ADS));
   }
   try {
@@ -2469,7 +2662,7 @@ function loadAds() {
     return a;
   } catch { return JSON.parse(JSON.stringify(DEFAULT_ADS)); }
 }
-function saveAds(a) { fs.writeFileSync(ADS_FILE, JSON.stringify(a, null, 2)); }
+function saveAds(a) { atomicWriteFile(ADS_FILE, JSON.stringify(a, null, 2)); }
 
 function adsDistribute() {
   const a = loadAds();
@@ -2559,7 +2752,7 @@ app.get('/api/ads/admin/list', requireSelfAdmin, (req, res) => {
 const DEFAULT_SUBS = { active: [], codes: [] };
 function loadSubs() {
   if (!fs.existsSync(SUBSCRIPTIONS_FILE)) {
-    fs.writeFileSync(SUBSCRIPTIONS_FILE, JSON.stringify(DEFAULT_SUBS, null, 2));
+    atomicWriteFile(SUBSCRIPTIONS_FILE, JSON.stringify(DEFAULT_SUBS, null, 2));
     return JSON.parse(JSON.stringify(DEFAULT_SUBS));
   }
   try {
@@ -2569,7 +2762,7 @@ function loadSubs() {
     return s;
   } catch { return JSON.parse(JSON.stringify(DEFAULT_SUBS)); }
 }
-function saveSubs(s) { fs.writeFileSync(SUBSCRIPTIONS_FILE, JSON.stringify(s, null, 2)); }
+function saveSubs(s) { atomicWriteFile(SUBSCRIPTIONS_FILE, JSON.stringify(s, null, 2)); }
 
 function isSubscribed(username) {
   if (!username) return false;
@@ -2818,6 +3011,16 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
 
   const projects = getAccessibleProjects(req.user);
 
+  // Если клиент закрыл вкладку/оборвал соединение — останавливаем генерацию,
+  // чтобы Ollama не держала GPU и сокет бесконечно.
+  let ollamaReq = null;
+  let clientGone = false;
+  const onClientClose = () => {
+    clientGone = true;
+    if (ollamaReq) { try { ollamaReq.destroy(new Error('client disconnected')); } catch {} }
+  };
+  req.on('close', onClientClose);
+
   try {
   const result = await darcus.darcusAsk({
     user: req.user,
@@ -2829,8 +3032,10 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
     editingFile: typeof editingFile === 'string' ? editingFile.slice(0, 500) : '', // [NEW]
     stylePreset: typeof stylePreset === 'string' ? stylePreset.slice(0, 40) : 'default',
     onChunk: (piece) => {
+      if (clientGone) return;
       try { res.write(`event: chunk\ndata: ${JSON.stringify({ text: piece })}\n\n`); } catch {}
     },
+    onRequest: (r) => { ollamaReq = r; if (clientGone) { try { r.destroy(); } catch {} } },
   });
 
     if (chatId) {
@@ -3024,7 +3229,7 @@ app.get('/api/darcus/image-info', requireAuth, projectGuard('read', 'query'), (r
   res.json({ item });
 });
 
-app.post('/api/darcus/image-analyze', requireAuth, projectGuard('read', 'body'), async (req, res) => {
+app.post('/api/darcus/image-analyze', requireAuth, requireSubscription, rateLimitDarcus, projectGuard('read', 'body'), async (req, res) => {
   const rel = String(req.body?.path || '');
   let abs;
   try { abs = safeJoin(req.projectRoot, rel); }
@@ -3035,16 +3240,18 @@ app.post('/api/darcus/image-analyze', requireAuth, projectGuard('read', 'body'),
     return res.status(400).json({ error: 'not image' });
   try {
     const [ocr, vision] = await Promise.all([darcus.ocrImage(abs), darcus.describeImage(abs)]);
+    const err = vision.error || ocr.error || null;
     const item = {
       text: vision.text || ocr.text || '',
       description: vision.description || '',
       boxes: vision.boxes || [],
       analyzedAt: new Date().toISOString(),
     };
+    if (err) return res.status(502).json({ error: 'Модель не смогла проанализировать изображение: ' + err });
     const hash = darcus.getFileSha1(abs);
     if (hash) {
       const cache = darcus.loadOcrCache();
-      cache.items[hash] = item;    // ← [FIX] ключ = sha1
+      cache.items[hash] = item;    // ← [FIX] ключ = sha1, только успешный результат
       darcus.saveOcrCache(cache);
     }
     res.json({ ok: true, item });
@@ -3079,11 +3286,15 @@ function queueImageAnalysis(projectId, rel, abs) {
         error: vision.error || ocr.error || null,
       };
       const c2 = darcus.loadOcrCache();
-      c2.items[hash] = item;
-      darcus.saveOcrCache(c2);
-
-      if (item.error) logger.warn({ rel, err: item.error }, 'OCR failed');
-      else logger.info({ rel, textLen: item.text.length, descLen: item.description.length }, 'OCR ok');
+      // Ошибку не кэшируем: иначе файл больше никогда не переанализируется
+      // (старый код проверял только наличие записи по хэшу).
+      if (!item.error) {
+        c2.items[hash] = item;
+        darcus.saveOcrCache(c2);
+        logger.info({ rel, textLen: item.text.length, descLen: item.description.length }, 'OCR ok');
+      } else {
+        logger.warn({ rel, err: item.error }, 'OCR failed (не кэшируем)');
+      }
 
       // ← NEW: после успешного OCR — построить эмбеддинг из описания+текста
       if (!item.error && projectId && projectId !== '__attach__') {
@@ -3153,7 +3364,7 @@ function loadDarcusChats() {
   catch { return { chats: {} }; }
 }
 function saveDarcusChats(d) {
-  try { fs.writeFileSync(DARCUS_CHATS_FILE, JSON.stringify(d, null, 2)); } catch {}
+  try { atomicWriteFile(DARCUS_CHATS_FILE, JSON.stringify(d, null, 2)); } catch {}
 }
 function getUserChats(username) {
   const d = loadDarcusChats();
@@ -3290,8 +3501,20 @@ app.post('/api/projects/:projectId/tags',
 app.use((err, req, res, next) => {
   try { logger.error({ err: err.message, stack: err.stack, url: req.originalUrl }, 'unhandled error'); } catch {}
   if (res.headersSent) return next(err);
-  if (req.path.startsWith('/api/')) return res.status(500).json({ error: 'internal error' });
-  res.status(500).send('Internal Server Error');
+  // body-parser и multer кладут корректный HTTP-статус в err.status/statusCode.
+  const status = Number.isInteger(err.status) ? err.status
+    : Number.isInteger(err.statusCode) ? err.statusCode
+    : 500;
+  const isJsonApi = req.path.startsWith('/api/');
+  if (isJsonApi) {
+    return res.status(status).json({
+      error: status === 413 ? 'Слишком большой запрос'
+        : status === 400 ? 'Некорректный запрос'
+        : 'internal error',
+      code: err.code || undefined,
+    });
+  }
+  res.status(status).send(status === 413 ? 'Payload Too Large' : status === 400 ? 'Bad Request' : 'Internal Server Error');
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -3299,32 +3522,43 @@ process.on('unhandledRejection', (reason) => {
 });
 process.on('uncaughtException', (err) => {
   try { logger.error({ err: err.message, stack: err.stack }, 'uncaughtException'); } catch {}
+  // Процесс в неопределённом состоянии: лучше упасть и перезапуститься, чем
+  // продолжать обслуживать запросы с повреждённым состоянием.
+  try { flushTelemetry(); } catch {}
+  process.exit(1);
 });
 
 /* ---------- Старт ---------- */
-app.listen(PORT, () => {
-  loadUsers();
-  loadProjects();
-  migrateOcrCacheIfNeeded();
+function startServer() {
+  return app.listen(PORT, cfg.bindHost, () => {
+    loadUsers();
+    loadProjects();
+    migrateOcrCacheIfNeeded();
 
-  // [NEW] Мягкий прогрев индекса эмбеддингов.
-  // Через 20 сек после старта индексируем максимум 200 новых чанков —
-  // остальное домешается при следующих рестартах или через админку.
-  setTimeout(() => {
-    try {
-      const all = loadProjects().projects.map(p => ({
-        id: p.id, name: p.name, root: projectFolder(p), project: p,
-      }));
-      darcus.indexProjects(all, { maxChunksPerRun: 200 })
-        .then(r => r.ok
-          ? logger.info(r, 'embed: startup index pass done')
-          : logger.warn(r, 'embed: startup index skipped'))
-        .catch(e => logger.warn({ err: e.message }, 'embed: startup index error'));
-    } catch {}
-  }, 20_000);
+    // Мягкий прогрев индекса эмбеддингов.
+    setTimeout(() => {
+      try {
+        const all = loadProjects().projects.map(p => ({
+          id: p.id, name: p.name, root: projectFolder(p), project: p,
+        }));
+        darcus.indexProjects(all, { maxChunksPerRun: 200 })
+          .then(r => r.ok
+            ? logger.info(r, 'embed: startup index pass done')
+            : logger.warn(r, 'embed: startup index skipped'))
+          .catch(e => logger.warn({ err: e.message }, 'embed: startup index error'));
+      } catch {}
+    }, 20_000);
 
-  logger.info({ port: PORT, projectsRoot: PROJECTS_ROOT, logFile: LOG_FILE, env: cfg.env }, 'DarkArmy Dossier started');
-  console.log(`✅ DarkArmy Dossier: http://localhost:${PORT}`);
-  console.log(`📁 Проекты: ${PROJECTS_ROOT}`);
-  console.log(`📜 Лог: ${LOG_FILE}`);
-});
+    logger.info({ port: PORT, bindHost: cfg.bindHost, projectsRoot: PROJECTS_ROOT, logFile: LOG_FILE, env: cfg.env }, 'DarkArmy Dossier started');
+    console.log(`DarkArmy Dossier: http://${cfg.bindHost}:${PORT}`);
+    console.log(`Проекты: ${PROJECTS_ROOT}`);
+    console.log(`Лог: ${LOG_FILE}`);
+  });
+}
+
+if (require.main === module) startServer();
+
+module.exports = {
+  app, startServer, safeJoin, loadJSON, atomicWriteFile, sendProjectFile,
+  validatePassword, decodeUploadFilename, safeFileName,
+};

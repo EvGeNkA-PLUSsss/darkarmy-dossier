@@ -129,9 +129,9 @@ const DEFAULT_CONFIG = {
   ollama: {
     url: 'http://localhost:11434',
     chatModel: 'gemma4:e4b',
-    visionModel: 'gemma3:4b',
-    embedModel: 'qwen3-embedding:0.6b',
-    rerankModel: 'pdurugyan/qwen3-reranker-0.6b-q8_0:latest',                 // [NEW] cross-encoder для реранка RAG
+    visionModel: 'gemma4:e4b',
+    embedModel: 'nomic-embed-text',
+    rerankModel: '',                 // пусто — используется лексический реранк
     timeout: 180000,
     numCtx: 8192,
     temperature: 0.7,
@@ -277,7 +277,15 @@ async function ollamaChatStream(messages, opts, onChunk) {
   const url = cfg.ollama.url.replace(/\/$/, '') + '/api/chat';
   const u = new URL(url);
   const lib = u.protocol === 'https:' ? https : http;
+  const timeoutMs = opts.timeout || cfg.ollama.timeout || 180000;
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (fn, value) => { if (settled) return; settled = true; clearTimeout(timer); fn(value); };
+    const timer = setTimeout(() => {
+      try { req.destroy(new Error('Ollama не ответила за ' + Math.round(timeoutMs / 1000) + ' с')); } catch {}
+    }, timeoutMs);
+    if (timer.unref) timer.unref();
+
     const req = lib.request({
       hostname: u.hostname, port: u.port || (u.protocol === 'https:' ? 443 : 80),
       path: u.pathname, method:'POST',
@@ -285,7 +293,7 @@ async function ollamaChatStream(messages, opts, onChunk) {
     }, res => {
       if (res.statusCode !== 200) {
         let b = ''; res.on('data', d => b += d);
-        res.on('end', () => reject(new Error(`HTTP ${res.statusCode}: ${b.slice(0,300)}`)));
+        res.on('end', () => finish(reject, new Error(`HTTP ${res.statusCode}: ${b.slice(0,300)}`)));
         return;
       }
       let buf = '', full = '';
@@ -299,14 +307,16 @@ async function ollamaChatStream(messages, opts, onChunk) {
             const j = JSON.parse(line);
             const piece = j.message?.content || '';
             if (piece) { full += piece; try { onChunk(piece); } catch {} }
-            if (j.done) { resolve(full); return; }
+            if (j.done) { finish(resolve, full); return; }
           } catch {}
         }
       });
-      res.on('end', () => resolve(full));
-      res.on('error', reject);
+      res.on('end', () => finish(resolve, full));
+      res.on('error', e => finish(reject, e));
     });
-    req.on('error', reject);
+    // Сервер может попросить отменить запрос (клиент закрыл вкладку).
+    if (typeof opts.onRequest === 'function') { try { opts.onRequest(req); } catch {} }
+    req.on('error', e => finish(reject, e));
     req.write(body);
     req.end();
   });
@@ -869,7 +879,7 @@ async function wikiSearch(q, limit) {
 }
 
 /* ================== Darcus ================== */
-async function darcusAsk({ user, projects, projectId, history, query, attachments, editingFile, stylePreset, onChunk }) {
+async function darcusAsk({ user, projects, projectId, history, query, attachments, editingFile, stylePreset, onChunk, onRequest }) {
   const cfg = loadAiConfig();
   const project = projects.find(p => p.id === projectId);
   const subs = buildSubs({
@@ -928,11 +938,28 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
   let sysPrompt = applySubs(cfg.prompts.system, subs);
   if (preset && preset.systemSuffix) sysPrompt += preset.systemSuffix;
 
+  /* Бюджет промпта: раньше история (до 64k) + вложения (до 180k) + RAG
+     давали до ~250k символов при num_ctx 8192 — Ollama молча обрезала начало,
+     то есть выбрасывала system-промпт с правилами. */
+  const maxPromptChars = Math.max(6000, (cfg.ollama.numCtx || 8192) * 2);
+  let budget = maxPromptChars - sysPrompt.length - String(query || '').length - 1200;
+  if (budget < 2000) budget = 2000;
+  const trimPart = (text, share, label) => {
+    const limit = Math.max(0, Math.floor(budget * share));
+    const t = String(text || '');
+    const out = t.length > limit ? t.slice(0, limit) + `\n…(${label} сокращено из-за лимита контекста)` : t;
+    budget -= out.length;
+    return out;
+  };
+  const contextTrimmed = trimPart(context, 0.45, 'контекст');
+  const historyTrimmed = trimPart(histText, 0.25, 'история');
+  const attachmentsTrimmed = trimPart(attachText || '(нет)', 0.30, 'вложения');
+
   const messages = [
     { role: 'system', content: sysPrompt },
     { role: 'user',   content: applySubs(cfg.prompts.chat, {
-        ...subs, context, query, history: histText,
-        attachments: attachText || '(нет)'
+        ...subs, context: contextTrimmed, query, history: historyTrimmed,
+        attachments: attachmentsTrimmed
       }) }
   ];
   if (imageParts.length) {
@@ -940,6 +967,7 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
   }
 
   const modelOpts = imageParts.length ? { model: cfg.ollama.visionModel } : {};
+  if (typeof onRequest === 'function') modelOpts.onRequest = onRequest;
 
   const answer = await ollamaChatStream(messages, modelOpts, onChunk);
   return {
