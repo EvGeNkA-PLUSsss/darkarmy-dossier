@@ -3211,7 +3211,7 @@ function collectReferencedImages(project, editingFile, alreadyNames = []) {
 }
 
 app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, async (req, res) => {
-  const { query, history, projectId, chatId, attachments, editingFile, stylePreset } = req.body || {};
+  const { query, history, projectId, chatId, attachments, editingFile, stylePreset, voiceMode } = req.body || {};
 
   // [SEC] Валидация входа
   const q = (typeof query === 'string' ? query : '').trim();
@@ -3300,6 +3300,7 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
     attachments: safeAtts,
     editingFile: typeof editingFile === 'string' ? editingFile.slice(0, 500) : '', // [NEW]
     stylePreset: typeof stylePreset === 'string' ? stylePreset.slice(0, 40) : 'default',
+    voiceMode: voiceMode === true,
     onChunk: (piece) => {
       if (clientGone) return;
       try { res.write(`event: chunk\ndata: ${JSON.stringify({ text: piece })}\n\n`); } catch {}

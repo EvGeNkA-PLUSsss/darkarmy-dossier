@@ -1133,6 +1133,13 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
   .sidebar-actions .side-btn .ico { display: none; }
 }
 
+/* Darcus: шапка не должна вылезать за край на телефоне */
+.darcus-head { flex-wrap: wrap; row-gap: 6px; }
+.darcus-head .darcus-brand { flex: 0 0 auto; }
+.darcus-head .darcus-sub { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.darcus-head .darcus-style-select { flex: 0 1 130px; min-width: 0; max-width: 130px; }
+.darcus-head .voice-mode-btn { flex: 0 0 auto; }
+
 /* Настройки голоса в админке */
 #tab-voice .settings-grid {
   display: grid;

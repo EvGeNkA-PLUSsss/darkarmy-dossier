@@ -1008,7 +1008,7 @@ async function wikiSearch(q, limit) {
 }
 
 /* ================== Darcus ================== */
-async function darcusAsk({ user, projects, projectId, history, query, attachments, editingFile, stylePreset, onChunk, onRequest }) {
+async function darcusAsk({ user, projects, projectId, history, query, attachments, editingFile, stylePreset, voiceMode, onChunk, onRequest }) {
   const cfg = loadAiConfig();
   const project = projects.find(p => p.id === projectId);
   const subs = buildSubs({
@@ -1066,6 +1066,12 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
   const preset = (cfg.stylePresets && stylePreset) ? cfg.stylePresets[stylePreset] : null;
   let sysPrompt = applySubs(cfg.prompts.system, subs);
   if (preset && preset.systemSuffix) sysPrompt += preset.systemSuffix;
+  if (voiceMode) {
+    sysPrompt += '\n\n=== ГОЛОСОВОЙ РЕЖИМ ===\n' +
+      'Ответ будет озвучен вслух. Отвечай КРАТКО: 1–3 предложения, простой разговорный текст. ' +
+      'Без списков, таблиц, блоков кода, ссылок, эмодзи и длинных перечислений. ' +
+      'Если нужно выполнить действие с файлом — одно короткое предложение и ACTION-блок в конце.';
+  }
 
   /* Бюджет промпта: раньше история (до 64k) + вложения (до 180k) + RAG
      давали до ~250k символов при num_ctx 8192 — Ollama молча обрезала начало,
@@ -1099,7 +1105,7 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
       ...subs, query, attachments: attachmentsTrimmed,
       // Компактный контекст: qwen2.5vl теряет изображение при длинном промпте.
       context: contextTrimmed.slice(0, 900), history: historyTrimmed.slice(0, 600),
-    });
+    }) + (voiceMode ? '\n\nГОЛОСОВОЙ РЕЖИМ: ответ озвучивается — отвечай кратко, 1–3 предложениями, без списков и Markdown.' : '');
     messages = [{ role: 'user', content: visionPrompt, images: imageParts }];
     modelOpts = { model: visionModel, temperature: 0.2 };
   } else {

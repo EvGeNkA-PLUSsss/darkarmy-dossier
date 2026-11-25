@@ -267,14 +267,14 @@ function setDarcusAutoApply(on) {
 }
 
 /* ---------- Darcus: авто-отправка распознанной речи ---------- */
-function darcusVoiceAutoSendOn() { return localStorage.getItem('darcusVoiceAutoSend') === '1'; }
+function darcusVoiceAutoSendOn() { return localStorage.getItem('darcusVoiceAutoSend') !== '0'; }
 function updateDarcusVoiceAutoSendBtn() {
   const b = document.getElementById('darcusVoiceAutoSendBtn');
   if (!b) return;
   b.classList.toggle('active', darcusVoiceAutoSendOn());
   b.title = darcusVoiceAutoSendOn()
-    ? 'Авто-отправка распознанной речи включена'
-    : 'Авто-отправка распознанной речи (по умолчанию выключена — текст остаётся в поле, можно проверить)';
+    ? 'Авто-отправка распознанной речи включена (нажмите, чтобы выключить)'
+    : 'Авто-отправка выключена — текст останется в поле для проверки';
 }
 function setDarcusVoiceAutoSend(on) {
   localStorage.setItem('darcusVoiceAutoSend', on ? '1' : '0');
@@ -3619,6 +3619,7 @@ async function sendDarcusQuery(query, attachments) {
         attachments: payload,
         editingFile: state.inlineEditFile || state.currentFile || '', // [NEW]
         stylePreset: localStorage.getItem('darcusStyle') || 'default',
+        voiceMode: darcusVoiceModeOn(),
       }),
       signal: ac.signal
     });
