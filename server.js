@@ -25,7 +25,7 @@ const cfg = require('./config');
 const { logger, writeAccessLog, LOG_FILE } = require('./logger');
 const storage = require('./src/storage');
 
-const app = express();
+const app = express('+role+');
 const PORT = cfg.port;
 
 const PROJECTS_ROOT = cfg.projectsRoot;      // [SEC] вынесено в config.js
@@ -413,6 +413,54 @@ function sseBroadcastExcept(event, data, exceptUsers = []) {
   }
 }
 
+/* ---------- Уведомления ---------- */
+function adminUsernames() {
+  try { return loadUsers().users.filter(u => u.role === 'admin').map(u => u.username); }
+  catch { return []; }
+}
+
+function notifyUser(username, data) {
+  if (!username) return null;
+  try {
+    const n = storage.createNotification({ username, ...data });
+    if (n) sseSendTo([username], 'notification', { notification: n });
+    return n;
+  } catch (e) {
+    logger.warn({ err: e.message, user: username }, 'notification failed');
+    return null;
+  }
+}
+
+function notifyMany(usernames, data) {
+  const seen = new Set();
+  for (const u of usernames) {
+    if (!u || seen.has(u)) continue;
+    seen.add(u);
+    notifyUser(u, data);
+  }
+}
+
+// Упоминания @username в тексте — уведомляем только участников этого чата/проекта.
+function notifyMentions(text, allowedUsers, author, link) {
+  const found = String(text || '').match(/@([A-Za-z0-9_.\-@]{3,64})/g) || [];
+  if (!found.length) return;
+  const allowed = new Set(allowedUsers);
+  const targets = new Set();
+  for (const raw of found) {
+    const name = raw.slice(1);
+    if (name !== author && allowed.has(name)) targets.add(name);
+    if (targets.size >= 5) break;
+  }
+  for (const name of targets) {
+    notifyUser(name, {
+      type: 'mention',
+      title: 'Вас упомянули в чате',
+      body: `${author}: ${String(text).slice(0, 140)}`,
+      link,
+    });
+  }
+}
+
 /* ---------- Middleware ---------- */
 app.use(express.json({ limit: cfg.limits.jsonBodyMax }));
 app.use(express.urlencoded({ extended: true }));
@@ -569,6 +617,8 @@ const rateLimitUpload    = makeRateLimiter(60 * 1000, 30, 'Слишком мно
 
 /* ---------- История версий файлов (src/routes/history.js) ---------- */
 app.use(require('./src/routes/history')({ storage, requireAuth, projectGuard }));
+/* ---------- Центр уведомлений (src/routes/notifications.js) ---------- */
+app.use(require('./src/routes/notifications')({ storage, requireAuth }));
 
 /* ---------- SSRF-защита ---------- */
 // [SEC] Валидация URL Ollama. Блокирует metadata-сервисы и private ranges в проде.
@@ -1054,6 +1104,11 @@ app.post('/api/projects/:projectId/members', requireAuth, (req, res) => {
   saveProjects(loadProjects());
   logChange({ user: req.user.username, action: 'project-member-add', projectId: p.id, target: username, details: `role=${role}` });
   sseSendTo([username], 'project-update', { projectId: p.id });
+  notifyUser(username, {
+    type: 'project', title: 'Вас добавили в проект',
+    body: `${req.user.username} добавил вас в проект «${p.name}» (роль: ${role})`,
+    link: 'project:' + p.id, projectId: p.id,
+  });
   res.json({ ok: true });
 });
 
@@ -1868,6 +1923,7 @@ app.post('/api/chat/send', requireAuth, requireNotMutedGeneral, requireGeneralCh
   if (data.messages.length > 1000) data.messages = data.messages.slice(-1000);
   saveJSON(CHAT_FILE, data);
   sseBroadcast('chat', { message: msg });
+  notifyMentions(msg.text, loadUsers().users.map(u => u.username), me, 'chat:general');
   res.json({ ok: true, message: msg });
 });
 
@@ -1903,6 +1959,10 @@ app.post('/api/tickets', requireAuth, (req, res) => {
   saveJSON(TICKETS_FILE, data);
   const admins = loadUsers().users.filter(u => u.role === 'admin').map(u => u.username);
   sseSendTo(admins, 'ticket-new', { ticket });
+  notifyMany(admins.filter(a => a !== me), {
+    type: 'ticket', title: 'Новое обращение в поддержку',
+    body: `${me}: ${text.slice(0, 160)}`, link: 'ticket:' + ticket.id,
+  });
   res.json({ ok: true, ticket });
 });
 
@@ -1941,6 +2001,17 @@ app.post('/api/tickets/:id/messages', requireAuth, (req, res) => {
   const admins = loadUsers().users.filter(u => u.role === 'admin').map(u => u.username);
   for (const a of admins) recipients.add(a);
   sseSendTo([...recipients], 'ticket-message', { ticketId: t.id, message: msg });
+  if (me.role === 'admin' && t.from !== me.username) {
+    notifyUser(t.from, {
+      type: 'ticket', title: 'Ответ в обращении',
+      body: `${me.username}: ${msg.text.slice(0, 160)}`, link: 'ticket:' + t.id,
+    });
+  } else if (me.role !== 'admin') {
+    notifyMany(admins.filter(a => a !== me.username), {
+      type: 'ticket', title: 'Сообщение в обращении',
+      body: `${me.username}: ${msg.text.slice(0, 160)}`, link: 'ticket:' + t.id,
+    });
+  }
   res.json({ ok: true, message: msg });
 });
 
@@ -1965,6 +2036,11 @@ app.post('/api/tickets/:id/accept', requireRole('admin'), (req, res) => {
   for (const a of admins) recipients.add(a);
   sseSendTo([...recipients], 'ticket-status', { ticketId: t.id, status: t.status });
   sseSendTo([...recipients], 'ticket-message', { ticketId: t.id, message: sysMsg });
+  notifyUser(t.from, {
+    type: 'ticket', title: 'Обращение принято',
+    body: `Администратор ${req.user.username} взял ваш тикет в работу`,
+    link: 'ticket:' + t.id,
+  });
   res.json({ ok: true, ticket: t });
 });
 
@@ -1988,6 +2064,11 @@ app.post('/api/tickets/:id/close', requireRole('admin'), (req, res) => {
   for (const a of admins) recipients.add(a);
   sseSendTo([...recipients], 'ticket-status', { ticketId: t.id, status: t.status });
   sseSendTo([...recipients], 'ticket-message', { ticketId: t.id, message: sysMsg });
+  notifyUser(t.from, {
+    type: 'ticket', title: 'Обращение закрыто',
+    body: `Тикет закрыт администратором ${req.user.username}`,
+    link: 'ticket:' + t.id,
+  });
   res.json({ ok: true, ticket: t });
 });
 
@@ -2016,6 +2097,14 @@ app.post('/api/requests', requireAuth, projectGuard('read', 'body'), (req, res) 
   saveJSON(REQUESTS_FILE, data);
   const admins = loadUsers().users.filter(u => u.role === 'admin').map(u => u.username);
   sseSendTo(admins, 'request', { item });
+  const targets = new Set(admins);
+  if (req.project.creator && req.project.creator !== me) targets.add(req.project.creator);
+  targets.delete(me);
+  notifyMany([...targets], {
+    type: 'request', title: 'Запрос на изменение файла',
+    body: `${me} · ${file}: ${text.slice(0, 140)}`,
+    link: 'file:' + req.project.id + ':' + file, projectId: req.project.id,
+  });
   res.json({ ok: true, item });
 });
 
@@ -2027,6 +2116,11 @@ app.post('/api/requests/:id/close', requireRole('admin'), (req, res) => {
   item.closedBy = req.user.username;
   item.closedAt = new Date().toISOString();
   saveJSON(REQUESTS_FILE, data);
+  notifyUser(item.from, {
+    type: 'request', title: 'Запрос обработан',
+    body: `Ваш запрос по файлу ${item.file} закрыт`,
+    link: 'file:' + item.projectId + ':' + item.file, projectId: item.projectId,
+  });
   res.json({ ok: true });
 });
 
@@ -2052,6 +2146,11 @@ app.post('/api/reports', requireAuth, projectGuard('read', 'body'), (req, res) =
   saveJSON(REPORTS_FILE, data);
   const admins = loadUsers().users.filter(u => u.role === 'admin').map(u => u.username);
   sseSendTo(admins, 'report', { item });
+  notifyMany(admins.filter(a => a !== me), {
+    type: 'report', title: 'Новая жалоба',
+    body: `${me} · ${filePath}: ${reason.slice(0, 140)}`,
+    link: 'file:' + req.project.id + ':' + filePath, projectId: req.project.id,
+  });
   res.json({ ok: true });
 });
 
@@ -2067,6 +2166,11 @@ app.post('/api/reports/:id/resolve', requireRole('admin'), (req, res) => {
   item.resolvedBy = req.user.username;
   item.resolvedAt = new Date().toISOString();
   saveJSON(REPORTS_FILE, data);
+  notifyUser(item.from, {
+    type: 'report', title: 'Жалоба рассмотрена',
+    body: `Жалоба на файл ${item.file} рассмотрена администратором`,
+    link: 'file:' + item.projectId + ':' + item.file, projectId: item.projectId,
+  });
   res.json({ ok: true });
 });
 
@@ -2234,6 +2338,8 @@ app.post('/api/chat/project/:projectId/send',
     saveProjectChats(data);
     const recipients = req.project.members.map(m => m.username);
     sseSendTo([...new Set(recipients)], 'chat-project', { projectId: req.project.id, message: msg });
+    notifyMentions(msg.text, req.project.members.map(m => m.username), req.user.username,
+      'chat:project:' + req.project.id);
     res.json({ ok: true, message: msg });
   });
 
@@ -2706,6 +2812,15 @@ app.delete('/api/subscriptions/codes/:code', requireSelfAdmin, (req, res) => {
 });
 
 /* ---------- Darcus: config ---------- */
+// Публичная (для авторизованных) часть конфига — только названия стилей ответа.
+app.get('/api/darcus/styles', requireAuth, (req, res) => {
+  const cfgAi = darcus.loadAiConfig();
+  const presets = cfgAi.stylePresets || {};
+  res.json({
+    presets: Object.fromEntries(Object.entries(presets).map(([k, v]) => [k, { label: (v && v.label) || k }])),
+  });
+});
+
 app.get('/api/darcus/config', requireSelfAdmin, (req, res) => {
   res.json(darcus.loadAiConfig());
 });

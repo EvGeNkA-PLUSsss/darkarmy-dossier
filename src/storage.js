@@ -50,8 +50,15 @@ function init({ dir }) {
       sid TEXT PRIMARY KEY, sess TEXT NOT NULL, expires INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires);
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY, username TEXT NOT NULL, type TEXT NOT NULL,
+      created_at TEXT NOT NULL, read_at TEXT, payload TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(username, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(username, read_at);
   `);
   db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)').run('schema_version', String(SCHEMA_VERSION));
+  db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)').run('notifications_ready', '1');
   migrateFromJson();
   return db;
 }
@@ -320,6 +327,73 @@ function createSessionStore(expressSession) {
   return new SqliteSessionStore();
 }
 
+/* ---------- Уведомления ---------- */
+function createNotification({ username, type, title, body = '', link = null, projectId = null }) {
+  if (!username || !type) return null;
+  const item = {
+    id: crypto.randomUUID(),
+    username,
+    type: String(type).slice(0, 40),
+    title: String(title || '').slice(0, 200),
+    body: String(body || '').slice(0, 500),
+    link: link ? String(link).slice(0, 300) : null,
+    projectId: projectId || null,
+    createdAt: nowIso(),
+    readAt: null,
+  };
+  db.prepare(`INSERT INTO notifications (id, username, type, created_at, read_at, payload)
+              VALUES (?, ?, ?, ?, NULL, ?)`)
+    .run(item.id, item.username, item.type, item.createdAt, JSON.stringify(item));
+  // Держим не больше 200 уведомлений на пользователя.
+  const count = db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE username = ?').get(username).n;
+  if (count > 200) {
+    db.prepare(`DELETE FROM notifications WHERE id IN (
+      SELECT id FROM notifications WHERE username = ? ORDER BY created_at ASC LIMIT ?)`)
+      .run(username, count - 200);
+  }
+  return item;
+}
+
+function listNotifications(username, { limit = 30, unreadOnly = false } = {}) {
+  const lim = Math.min(Math.max(parseInt(limit, 10) || 30, 1), 100);
+  const where = unreadOnly ? 'username = ? AND read_at IS NULL' : 'username = ?';
+  const rows = db.prepare(`SELECT payload FROM notifications WHERE ${where}
+                           ORDER BY created_at DESC LIMIT ?`).all(username, lim);
+  const unread = db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE username = ? AND read_at IS NULL')
+    .get(username).n;
+  return { items: rows.map(r => JSON.parse(r.payload)), unread };
+}
+
+function markNotificationRead(username, id) {
+  const row = db.prepare('SELECT payload FROM notifications WHERE id = ? AND username = ?').get(id, username);
+  if (!row) return null;
+  const item = JSON.parse(row.payload);
+  if (!item.readAt) {
+    item.readAt = nowIso();
+    db.prepare('UPDATE notifications SET read_at = ?, payload = ? WHERE id = ?')
+      .run(item.readAt, JSON.stringify(item), id);
+  }
+  return item;
+}
+
+function markAllNotificationsRead(username) {
+  const now = nowIso();
+  const rows = db.prepare('SELECT payload FROM notifications WHERE username = ? AND read_at IS NULL').all(username);
+  const stmt = db.prepare('UPDATE notifications SET read_at = ?, payload = ? WHERE id = ?');
+  tx(() => {
+    for (const r of rows) {
+      const item = JSON.parse(r.payload);
+      item.readAt = now;
+      stmt.run(now, JSON.stringify(item), item.id);
+    }
+  });
+  return rows.length;
+}
+
+function clearNotifications(username) {
+  db.prepare('DELETE FROM notifications WHERE username = ?').run(username);
+}
+
 /* ---------- Диагностика ---------- */
 function stats() {
   const file = path.join(dataDir, 'dossier.db');
@@ -338,6 +412,7 @@ function stats() {
     projects: db.prepare('SELECT COUNT(*) AS n FROM projects').get().n,
     changes: db.prepare('SELECT COUNT(*) AS n FROM changes').get().n,
     telemetry: db.prepare('SELECT COUNT(*) AS n FROM telemetry').get().n,
+    notifications: db.prepare('SELECT COUNT(*) AS n FROM notifications').get().n,
     sessions: db.prepare('SELECT COUNT(*) AS n FROM sessions').get().n,
     schemaVersion: Number(metaGet('schema_version') || 0),
     jsonMigratedAt: metaGet('json_migrated_at'),
@@ -354,5 +429,6 @@ module.exports = {
   getProjects, replaceProjects,
   appendChange, getChange, updateChange, queryChanges, listAllChanges,
   appendTelemetryBatch, listTelemetryUsers, getTelemetry, clearTelemetry,
+  createNotification, listNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications,
   createSessionStore,
 };

@@ -170,6 +170,7 @@ function renderDashboard(d) {
         ${dashRow('Проекты', s.projects ?? '—')}
         ${dashRow('Журнал изменений', s.changes ?? '—')}
         ${dashRow('События телеметрии', s.telemetry ?? '—')}
+        ${dashRow('Уведомления', s.notifications ?? '—')}
         ${dashRow('Активные сессии', s.sessions ?? '—')}
         ${dashRow('Версия схемы', s.schemaVersion ?? '—')}
       </div>

@@ -271,3 +271,69 @@ test('история версий доступна участнику проек
   await stranger.login('member2', 'MemberTest123!');
   assert.equal((await stranger.request('/api/files/default/history?path=history-test.md')).status, 403);
 });
+
+test('уведомления: тикет создаёт уведомление админу, прочтение уменьшает счётчик', async () => {
+  const member = makeClient();
+  await member.login('member1', 'MemberTest123!');
+  const t = await member.json('/api/tickets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'Тестовое обращение для уведомления' }),
+  });
+  // у member1 мог уже быть открытый тикет от прошлых прогонов
+  assert.ok([200, 409].includes(t.res.status), JSON.stringify(t.body));
+
+  const notif = await admin.json('/api/notifications?limit=20');
+  assert.equal(notif.res.status, 200);
+  assert.ok(notif.body.unread >= 1, 'у админа должно быть непрочитанное уведомление');
+  const ticketNotif = notif.body.items.find(n => n.type === 'ticket');
+  assert.ok(ticketNotif, 'должно быть уведомление о тикете');
+  assert.ok(ticketNotif.link.startsWith('ticket:'));
+
+  const read = await admin.json('/api/notifications/' + ticketNotif.id + '/read', { method: 'POST' });
+  assert.equal(read.res.status, 200);
+  assert.ok(read.body.notification.readAt);
+
+  const count = await admin.json('/api/notifications/unread-count');
+  assert.equal(count.res.status, 200);
+  assert.ok(count.body.unread < notif.body.unread);
+
+  // Чужое уведомление нельзя прочитать/увидеть
+  const stranger = makeClient();
+  await stranger.login('member2', 'MemberTest123!');
+  const strangerRead = await stranger.request('/api/notifications/' + ticketNotif.id + '/read', { method: 'POST' });
+  assert.equal(strangerRead.status, 404);
+  const strangerList = await stranger.json('/api/notifications');
+  assert.ok(!strangerList.body.items.some(n => n.id === ticketNotif.id));
+});
+
+test('уведомления: упоминание @логин в общем чате', async () => {
+  const sent = await admin.json('/api/chat/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: '@member1 проверка упоминания' }),
+  });
+  assert.equal(sent.res.status, 200, JSON.stringify(sent.body));
+
+  const member = makeClient();
+  await member.login('member1', 'MemberTest123!');
+  const list = await member.json('/api/notifications?limit=20');
+  assert.equal(list.res.status, 200);
+  assert.ok(list.body.items.some(n => n.type === 'mention' && n.body.includes('проверка упоминания')));
+
+  const all = await member.json('/api/notifications/read-all', { method: 'POST' });
+  assert.equal(all.res.status, 200);
+  assert.ok(all.body.changed >= 1);
+  const after = await member.json('/api/notifications/unread-count');
+  assert.equal(after.body.unread, 0);
+});
+
+test('стили Darcus доступны пользователю, полный конфиг — только админу', async () => {
+  const member = makeClient();
+  await member.login('member2', 'MemberTest123!');
+  const styles = await member.json('/api/darcus/styles');
+  assert.equal(styles.res.status, 200);
+  assert.ok(styles.body.presets && typeof styles.body.presets === 'object');
+  assert.equal((await member.request('/api/darcus/config')).status, 403);
+  assert.equal((await admin.request('/api/darcus/config')).status, 200);
+});

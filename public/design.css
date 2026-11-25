@@ -566,6 +566,55 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
 .dash-chip.warn { background: var(--badge-warn-bg); color: var(--badge-warn-fg); }
 .dash-chip.muted { background: var(--badge-muted-bg); color: var(--badge-muted-fg); }
 
+/* ---------- Центр уведомлений ---------- */
+.notif-modal-inner { width: min(94vw, 560px); max-width: 560px; height: auto; max-height: min(82dvh, 720px); }
+.notif-head-actions { display: flex; align-items: center; gap: var(--sp-2); }
+.notif-head-actions button {
+  height: 30px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: var(--fs-2);
+}
+.notif-head-actions button:hover { color: var(--text); border-color: var(--border-soft); }
+.notif-list { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-1) 0; }
+.notif-item {
+  display: flex;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border: 0;
+  border-bottom: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.notif-item:hover { background: var(--surface-hover); }
+.notif-item.unread { background: var(--accent-soft); }
+.notif-item.unread:hover { background: var(--accent-line); }
+.notif-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--accent);
+}
+.notif-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.notif-title { font-size: var(--fs-3); font-weight: 650; }
+.notif-body { font-size: var(--fs-2); color: var(--text-dim); overflow-wrap: anywhere; }
+.notif-time { font-size: var(--fs-1); color: var(--muted); }
+.notif-empty { text-align: center; padding: var(--sp-6); }
+@media (max-width: 900px) {
+  .notif-modal-inner { height: 100dvh; max-height: 100dvh; }
+}
+
 /* ---------- История версий / diff ---------- */
 .history-modal-inner { width: min(96vw, 1040px); max-width: 1040px; height: min(78dvh, 820px); }
 .history-body {
