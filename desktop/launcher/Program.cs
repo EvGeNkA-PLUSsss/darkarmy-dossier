@@ -34,7 +34,13 @@ static class Program
     {
         s = (s ?? "").Trim();
         if (s.Length == 0) return "";
-        if (!s.StartsWith("http://") && !s.StartsWith("https://")) s = "http://" + s;
+        if (!s.StartsWith("http://") && !s.StartsWith("https://"))
+        {
+            bool https = s.IndexOf(":8443", StringComparison.Ordinal) >= 0
+                      || s.IndexOf(":443", StringComparison.Ordinal) >= 0
+                      || (!s.Contains(":") && !s.StartsWith("127.") && !s.StartsWith("localhost", StringComparison.OrdinalIgnoreCase));
+            s = (https ? "https://" : "http://") + s;
+        }
         if (!s.EndsWith("/")) s += "/";
         return s;
     }

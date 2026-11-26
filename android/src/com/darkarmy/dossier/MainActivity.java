@@ -156,7 +156,11 @@ public class MainActivity extends Activity {
                 public void onClick(android.content.DialogInterface d, int w) {
                     String u = input.getText().toString().trim();
                     if (u.length() == 0) return;
-                    if (!u.startsWith("http://") && !u.startsWith("https://")) u = "http://" + u;
+                    if (!u.startsWith("http://") && !u.startsWith("https://")) {
+                        boolean https = u.contains(":8443") || u.contains(":443")
+                                || (!u.contains(":") && !u.startsWith("127.") && !u.toLowerCase().startsWith("localhost"));
+                        u = (https ? "https://" : "http://") + u;
+                    }
                     if (!u.endsWith("/")) u += "/";
                     getSharedPreferences("dossier", Context.MODE_PRIVATE).edit().putString("url", u).apply();
                     load(u);
