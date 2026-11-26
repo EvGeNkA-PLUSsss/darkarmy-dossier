@@ -32,7 +32,7 @@
 | Данные | на нашем сервере (можно перенести) | только у вас |
 | HTTPS/PWA | из коробки | nginx/Caddy + Let's Encrypt |
 
-**Hosted:** https://147-45-78-20.sslip.io/ · [Запросить доступ](https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/issues/new?template=hosted-access.yml)
+**Hosted:** https://147-45-78-20.sslip.io:8443/ · [Запросить доступ](https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/issues/new?template=hosted-access.yml)
 
 **Self-hosted:**
 ```bash

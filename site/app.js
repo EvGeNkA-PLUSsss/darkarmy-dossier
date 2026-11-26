@@ -1,6 +1,6 @@
 /* DarkArmy Dossier landing page */
 (() => {
-  const HOSTED = 'http://147.45.78.20:7561/';
+  const HOSTED = 'https://147-45-78-20.sslip.io:8443/';
   for (const id of ['hostedCta', 'finalHosted']) {
     const a = document.getElementById(id);
     if (a) a.href = HOSTED;

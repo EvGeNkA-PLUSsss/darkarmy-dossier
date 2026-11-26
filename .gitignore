@@ -39,3 +39,6 @@ __pycache__/
 
 # Android v4 signature sidecar
 *.idsig
+
+# deploy archives
+release/*.zip
