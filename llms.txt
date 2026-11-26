@@ -1,0 +1,36 @@
+# DarkArmy Dossier — llms.txt
+
+> Self-hosted AI workspace: projects, files, real-time collaboration, Darcus AI.
+> Open source under AGPL-3.0. Hosted Pro with subscription, or deploy from GitHub.
+
+## Canonical
+- Site: https://evgenka-plussss.github.io/darkarmy-dossier/
+- Hosted: https://147-45-78-20.sslip.io:8443/
+- Repo: https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier
+- Releases (APK/EXE): https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/releases
+- Agent rules: https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/blob/main/AGENTS.md
+
+## Documentation
+- Overview: /documenti/README.md
+- Architecture: /documenti/01-architecture.md
+- Installation: /documenti/02-installation.md
+- User guide: /documenti/03-user-guide.md
+- API: /documenti/04-api.md
+- Data model: /documenti/05-data-model.md
+- Darcus AI: /documenti/06-ai-darcus.md
+- Collaboration: /documenti/07-collaboration.md
+- Security: /documenti/08-security.md
+- PWA/APK/EXE: /documenti/09-desktop-mobile-pwa.md
+- Ubuntu deployment: /documenti/10-deployment-ubuntu.md
+- Troubleshooting: /documenti/11-troubleshooting.md
+- Development: /documenti/12-development.md
+- Admin: /documenti/13-admin-guide.md
+- FAQ: /documenti/14-faq.md
+- Changelog: /documenti/CHANGELOG.md
+
+## Facts
+- Node.js 20+, Express 5, SQLite (node:sqlite, WAL), SSE, vanilla JS SPA.
+- AI via local Ollama (chat/vision/embeddings), optional Silero TTS / faster-whisper.
+- Upload: 50 MB default; 500 MB with an active subscription.
+- PWA, Android APK, Windows EXE; offline read-only mode.
+- License: AGPL-3.0-only.

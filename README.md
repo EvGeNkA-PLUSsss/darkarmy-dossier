@@ -16,7 +16,8 @@
 [Сайт проекта](https://evgenka-plussss.github.io/darkarmy-dossier/) ·
 [Документация](documenti/README.md) ·
 [APK / EXE](release/README.md) ·
-[Для ИИ-агентов](AGENTS.md)
+[Для ИИ-агентов](AGENTS.md) ·
+[llms.txt](llms.txt)
 
 </div>
 
