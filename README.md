@@ -10,7 +10,8 @@
 [![Node.js](https://img.shields.io/badge/node-%E2%89%A520-3c873a.svg)](package.json)
 [![Tests](https://img.shields.io/badge/tests-50%2F50-brightgreen.svg)](test)
 [![PWA](https://img.shields.io/badge/PWA-ready-5a67d8.svg)](public/manifest.webmanifest)
-[![Hosted](https://img.shields.io/badge/hosted-pro%20subscription-ff3b55.svg)](https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/issues/new?template=hosted-access.yml)
+[![Web](https://img.shields.io/badge/web-free-brightgreen.svg)](https://147-45-78-20.sslip.io:8443/)
+[![AI Pro](https://img.shields.io/badge/AI%20Pro-250%20%E2%82%BD%2F%D0%BC%D0%B5%D1%81-ff3b55.svg)](https://t.me/AgroDeveloper)
 [![Docs](https://img.shields.io/badge/docs-36k%20words-9aa2b3.svg)](documenti/README.md)
 
 [Сайт проекта](https://evgenka-plussss.github.io/darkarmy-dossier/) ·
@@ -23,17 +24,18 @@
 
 ---
 
-## Два способа начать
+**Hosted:** https://147-45-78-20.sslip.io:8443/ · доступ и оплата — Telegram [@AgroDeveloper](https://t.me/AgroDeveloper)
 
-| | **Готовая версия (Hosted Pro)** | **Свой сервер (Self-hosted)** |
-|---|---|---|
-| Что это | Мы развернули Dossier — заходите и работайте | Полный код на вашем Ubuntu/Windows |
-| Подписка | Платная, выдаётся администратором | Не нужна |
-| Лимит файла | **500 МБ** | настраивается |
-| Данные | на нашем сервере (можно перенести) | только у вас |
-| HTTPS/PWA | из коробки | nginx/Caddy + Let's Encrypt |
+## Варианты
 
-**Hosted:** https://147-45-78-20.sslip.io:8443/ · [Запросить доступ](https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/issues/new?template=hosted-access.yml)
+| | **Web — бесплатно** | **Darcus AI — 250 ₽/мес** | **Свой сервер** |
+|---|---|---|---|
+| Что это | готовый Dossier в браузере | та же версия + AI-ассистент и 500 МБ | полный код на вашем Ubuntu/Windows |
+| Цена | **0 ₽** | **250 ₽/мес** | **0 ₽** (код) |
+| Доступ | написать [@AgroDeveloper](https://t.me/AgroDeveloper) | оплата в Telegram [@AgroDeveloper](https://t.me/AgroDeveloper) | развернуть по инструкции |
+| Лимит файла | 50 МБ | **500 МБ** | настраивается |
+| Darcus AI | — | RAG, документы, задачи | через локальную Ollama |
+| Данные | наши | наши | только у вас |
 
 **Self-hosted:**
 ```bash

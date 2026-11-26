@@ -1327,6 +1327,18 @@ kbd { background: var(--bg-3, #20232c); border: 1px solid var(--border); border-
 .onboarding-steps { margin: 0 0 18px; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; line-height: 1.55; }
 .onboarding-steps b { color: var(--text); }
 .onboarding-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.onboarding-actions button {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm);
+  padding: 8px 13px;
+  font-size: var(--fs-2);
+  cursor: pointer;
+}
+.onboarding-actions button:hover { border-color: var(--accent) !important; color: var(--accent) !important; }
+.onboarding-actions button.primary { background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important; }
+.onboarding-actions button.muted { color: var(--text-dim) !important; }
 .kanban-prio { display: inline-block; font-weight: 800; color: #fbbf24; }
 .kanban-prio.low { color: #93c5fd; font-weight: 600; }
 .kanban-prio.high { color: #f87171; }
