@@ -19,6 +19,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -54,7 +55,6 @@ public class MainActivity extends Activity {
     private LinearLayout setupPanel;
     private EditText serverInput;
     private TextView statusView;
-    private TextView serverChip;
     private ValueCallback<Uri[]> fileCallback;
     private boolean webReady;
 
@@ -116,7 +116,6 @@ public class MainActivity extends Activity {
                     if (setupPanel != null && setupPanel.getVisibility() == View.VISIBLE) return;
                     web.setVisibility(View.VISIBLE);
                     webReady = true;
-                    if (serverChip != null) serverChip.setVisibility(View.VISIBLE);
                 }
 
                 @Override
@@ -164,13 +163,7 @@ public class MainActivity extends Activity {
             setupPanel = buildSetupPanel();
             content.addView(setupPanel, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            serverChip = makeServerChip();
-            FrameLayout.LayoutParams chipLp = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(30));
-            chipLp.gravity = Gravity.TOP | Gravity.RIGHT;
-            chipLp.topMargin = dp(8);
-            chipLp.rightMargin = dp(8);
-            content.addView(serverChip, chipLp);
+            web.addJavascriptInterface(new NativeBridge(), "DarkArmyNative");
         } catch (Throwable t) {
             setupPanel = buildSetupPanel();
             content.addView(setupPanel, new FrameLayout.LayoutParams(
@@ -326,29 +319,6 @@ public class MainActivity extends Activity {
         return wrapper;
     }
 
-    private TextView makeServerChip() {
-        TextView chip = new TextView(this);
-        chip.setText("Сервер");
-        chip.setTextSize(11);
-        chip.setTypeface(Typeface.DEFAULT_BOLD);
-        chip.setTextColor(0xFFD8DAE5);
-        chip.setGravity(Gravity.CENTER);
-        chip.setPadding(dp(11), 0, dp(11), 0);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(15));
-        bg.setColor(0xE612151D);
-        bg.setStroke(dp(1), 0xFF343A4D);
-        chip.setBackground(bg);
-        chip.setVisibility(View.GONE);
-        chip.setClickable(true);
-        chip.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                showSetup("");
-            }
-        });
-        return chip;
-    }
-
     private TextView makeButton(String text, boolean primary) {
         TextView b = new TextView(this);
         b.setText(text);
@@ -393,7 +363,6 @@ public class MainActivity extends Activity {
         }
         statusView.setVisibility(View.GONE);
         if (setupPanel != null) setupPanel.setVisibility(View.GONE);
-        if (serverChip != null) serverChip.setVisibility(View.GONE);
         content.setBackgroundColor(0xFF080A0F);
         web.setVisibility(View.VISIBLE);
         web.setAlpha(1f);
@@ -402,7 +371,6 @@ public class MainActivity extends Activity {
 
     private void showSetup(String error) {
         if (web != null) web.setVisibility(View.GONE);
-        if (serverChip != null) serverChip.setVisibility(View.GONE);
         if (setupPanel != null) setupPanel.setVisibility(View.VISIBLE);
         if (statusView != null && error != null) {
             statusView.setText(error);
@@ -483,6 +451,17 @@ public class MainActivity extends Activity {
         if (requestCode == AUDIO_PERMISSION && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             Toast.makeText(this, "Микрофон разрешён — повторите запрос", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private class NativeBridge {
+        @JavascriptInterface
+        public void openServerSettings() {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    showSetup("");
+                }
+            });
         }
     }
 

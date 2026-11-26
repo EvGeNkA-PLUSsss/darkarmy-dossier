@@ -11,7 +11,7 @@ using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("DarkArmy Dossier")]
 [assembly: System.Reflection.AssemblyDescription("DarkArmy Dossier desktop launcher")]
-[assembly: System.Reflection.AssemblyVersion("1.2.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.2.1.0")]
 
 static class Program
 {

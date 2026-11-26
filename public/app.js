@@ -438,6 +438,40 @@ function initVersionWatch() {
     const tb = document.getElementById('trashBtn');
     if (tb) tb.onclick = openTrashModal;
 
+    /* ---- Mobile: все действия в одном листе (без перекрытия кнопок) ---- */
+    const moreMenu = document.getElementById('mobileMoreMenu');
+    const moreBtn = document.getElementById('mobileMoreBtn');
+    const openMore = () => { if (moreMenu) moreMenu.style.display = 'flex'; };
+    const closeMore = () => { if (moreMenu) moreMenu.style.display = 'none'; };
+    if (moreBtn) moreBtn.onclick = openMore;
+    document.getElementById('mobileMoreClose')?.addEventListener('click', closeMore);
+    if (moreMenu) moreMenu.addEventListener('click', e => { if (e.target === moreMenu) closeMore(); });
+    const clickHidden = id => { closeMore(); document.getElementById(id)?.click(); };
+    document.getElementById('mobileCreateFileBtn')?.addEventListener('click', () => clickHidden('newFileBtn'));
+    document.getElementById('mobileCreateFolderBtn')?.addEventListener('click', () => clickHidden('newFolderBtn'));
+    document.getElementById('mobileUploadBtn')?.addEventListener('click', () => clickHidden('uploadBtn'));
+    document.getElementById('mobileDarcusCreateBtn')?.addEventListener('click', () => clickHidden('darcusGenBtn'));
+    document.getElementById('mobileNewProjectBtn')?.addEventListener('click', () => clickHidden('projectAddBtn'));
+    document.getElementById('mobileTrashBtn')?.addEventListener('click', () => clickHidden('trashBtn'));
+    document.getElementById('mobileThemeBtn')?.addEventListener('click', () => clickHidden('themeBtn'));
+    document.getElementById('mobileBugBtn')?.addEventListener('click', () => clickHidden('bugBtn'));
+    document.getElementById('mobileHelpBtn')?.addEventListener('click', () => clickHidden('helpBtn'));
+    document.getElementById('mobileLogoutBtn')?.addEventListener('click', () => clickHidden('logoutBtn'));
+    if (state.user.role === 'admin') {
+      const ma = document.getElementById('mobileAdminLink'); if (ma) ma.style.display = 'flex';
+    }
+    const nativeBtn = document.getElementById('nativeServerBtn');
+    if (nativeBtn && window.DarkArmyNative && window.DarkArmyNative.openServerSettings) {
+      nativeBtn.style.display = 'flex';
+      nativeBtn.addEventListener('click', () => {
+        closeMore();
+        try { window.DarkArmyNative.openServerSettings(); } catch {}
+      });
+    }
+
+    /* ---- Mobile: пустой экран с действиями вместо «выберите файл слева» ---- */
+    wireEmptyActions();
+
     initProjectDropdown();
     document.getElementById('projectMenuBtn').onclick = openProjectMenu;
     document.getElementById('projectAddBtn').onclick = () => {
@@ -1854,11 +1888,30 @@ async function renderFileContent() {
     document.querySelectorAll('#content .ocr-panel').forEach(x => x.remove());
   }
 }
+const EMPTY_VIEWER_HTML = `<p class="hint">Выберите файл слева</p>
+<div id="mobileEmptyActions" class="mobile-empty-actions">
+  <button type="button" id="emptyFilesBtn" class="primary"><svg class="ico sm"><use href="#i-folder"/></svg> Файлы проекта</button>
+  <button type="button" id="emptyCreateBtn"><svg class="ico sm"><use href="#i-plus"/></svg> Создать</button>
+  <button type="button" id="emptyUploadBtn"><svg class="ico sm"><use href="#i-upload"/></svg> Загрузить</button>
+  <button type="button" id="emptyDarcusBtn"><svg class="ico sm"><use href="#i-star"/></svg> Darcus</button>
+  <button type="button" id="emptyProjectBtn"><svg class="ico sm"><use href="#i-layers"/></svg> Проект</button>
+</div>`;
+function wireEmptyActions() {
+  document.getElementById('emptyFilesBtn')?.addEventListener('click', () => {
+    document.body.classList.add('sidebar-open');
+    document.getElementById('menuBtn')?.setAttribute('aria-expanded', 'true');
+  });
+  document.getElementById('emptyCreateBtn')?.addEventListener('click', () => document.getElementById('newFileBtn')?.click());
+  document.getElementById('emptyUploadBtn')?.addEventListener('click', () => document.getElementById('uploadBtn')?.click());
+  document.getElementById('emptyDarcusBtn')?.addEventListener('click', () => document.getElementById('chatBtn')?.click());
+  document.getElementById('emptyProjectBtn')?.addEventListener('click', () => document.getElementById('projectAddBtn')?.click());
+}
 function resetViewer() {
   state.currentFile = null; state.showChanges = false;
   filebarEl.style.display = 'none';
   contentEl.classList.remove('content-full');
-  contentEl.innerHTML = '<p class="hint">Выберите файл слева</p>';
+  contentEl.innerHTML = EMPTY_VIEWER_HTML;
+  wireEmptyActions();
   renderTree();
 }
 

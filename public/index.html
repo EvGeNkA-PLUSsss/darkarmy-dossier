@@ -139,6 +139,9 @@
     <button id="profileBtn" title="Профиль"><svg class="ico"><use href="#i-user"/></svg></button>
     <a href="/admin.html" id="adminLink" style="display:none" title="Админ-панель"><svg class="ico"><use href="#i-settings"/></svg></a>
     <button id="logoutBtn" title="Выйти"><svg class="ico"><use href="#i-logout"/></svg></button>
+    <button id="mobileMoreBtn" type="button" title="Все действия" aria-label="Все действия">
+      <svg class="ico"><use href="#i-more"/></svg>
+    </button>
   </div>
 </header>
 
@@ -253,6 +256,13 @@
       <div id="content">
         <div id="ad-slot-empty-viewer" class="ad-slot ad-empty" data-slot="empty-viewer"></div>
         <p class="hint">Выберите файл слева</p>
+        <div id="mobileEmptyActions" class="mobile-empty-actions">
+          <button type="button" id="emptyFilesBtn" class="primary"><svg class="ico sm"><use href="#i-folder"/></svg> Файлы проекта</button>
+          <button type="button" id="emptyCreateBtn"><svg class="ico sm"><use href="#i-plus"/></svg> Создать</button>
+          <button type="button" id="emptyUploadBtn"><svg class="ico sm"><use href="#i-upload"/></svg> Загрузить</button>
+          <button type="button" id="emptyDarcusBtn"><svg class="ico sm"><use href="#i-star"/></svg> Darcus</button>
+          <button type="button" id="emptyProjectBtn"><svg class="ico sm"><use href="#i-layers"/></svg> Проект</button>
+        </div>
       </div>
     </div>
   </main>
@@ -529,6 +539,29 @@
         <button type="submit" class="primary"><svg class="ico sm"><use href="#i-send"/></svg> Отправить</button>
       </div>
     </form>
+  </div>
+</div>
+
+<div id="mobileMoreMenu" class="modal mobile-sheet-modal" style="display:none">
+  <div class="modal-inner mobile-sheet-inner">
+    <div class="mobile-sheet-head">
+      <span>Все действия</span>
+      <button type="button" id="mobileMoreClose" aria-label="Закрыть"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="mobile-sheet-actions">
+      <button type="button" id="mobileCreateFileBtn"><svg class="ico sm"><use href="#i-plus"/></svg> Создать файл</button>
+      <button type="button" id="mobileCreateFolderBtn"><svg class="ico sm"><use href="#i-folder-plus"/></svg> Создать папку</button>
+      <button type="button" id="mobileUploadBtn"><svg class="ico sm"><use href="#i-upload"/></svg> Загрузить файл</button>
+      <button type="button" id="mobileNewProjectBtn"><svg class="ico sm"><use href="#i-layers"/></svg> Новый проект</button>
+      <button type="button" id="mobileDarcusCreateBtn"><svg class="ico sm"><use href="#i-star"/></svg> Darcus — создать</button>
+      <button type="button" id="mobileTrashBtn"><svg class="ico sm"><use href="#i-trash"/></svg> Корзина</button>
+      <button type="button" id="mobileThemeBtn"><svg class="ico sm"><use href="#i-moon"/></svg> Сменить тему</button>
+      <button type="button" id="mobileBugBtn"><svg class="ico sm"><use href="#i-warning"/></svg> Сообщить о баге</button>
+      <button type="button" id="mobileHelpBtn"><svg class="ico sm"><use href="#i-help-circle"/></svg> Помощь и горячие клавиши</button>
+      <a href="/admin.html" id="mobileAdminLink" style="display:none"><svg class="ico sm"><use href="#i-settings"/></svg> Админ-панель</a>
+      <button type="button" id="nativeServerBtn" style="display:none"><svg class="ico sm"><use href="#i-refresh"/></svg> Сменить сервер</button>
+      <button type="button" id="mobileLogoutBtn" class="danger"><svg class="ico sm"><use href="#i-logout"/></svg> Выйти</button>
+    </div>
   </div>
 </div>
 
