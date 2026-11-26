@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <title>Админ-панель — DarkArmy Dossier</title>
 <meta name="theme-color" content="#0a0b0f">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5 L19.5 5.5 V11.5 C19.5 16.5 16.2 20.2 12 21.5 C7.8 20.2 4.5 16.5 4.5 11.5 V5.5 Z' stroke='%23e63946' stroke-width='1.6' fill='none'/%3E%3Cpath d='M9 11.7 L11 13.7 L15.2 9.5' stroke='%23e63946' stroke-width='1.8' fill='none'/%3E%3C/svg%3E">
+<link rel="icon" href="/icons/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="/icons/icon-192.png" sizes="192x192">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <link rel="stylesheet" href="style.css">
@@ -54,10 +55,7 @@
 
 <header id="topbar">
   <div class="brand">
-    <svg class="logo" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2.5 L19.5 5.5 V11.5 C19.5 16.5 16.2 20.2 12 21.5 C7.8 20.2 4.5 16.5 4.5 11.5 V5.5 Z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
-      <path d="M9 11.7 L11 13.7 L15.2 9.5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
+    <img class="logo" src="/icons/icon-64.png" width="24" height="24" alt="DarkArmy Dossier" style="border-radius:7px">
     <span class="brand-text">DarkArmy <span class="brand-accent">Dossier</span> · Админ</span>
   </div>
   <div class="user">
@@ -217,6 +215,7 @@
 <!-- DARCUS -->
 <section id="tab-darcus" class="tab-panel" style="display:none">
   <h2>Настройки Darcus (Ollama)</h2>
+<p class="hint" id="darcusKnowledgeStats">RAG-инструкции: загрузка…</p>
   <p class="hint">Доступно только пользователю с логином <b>admin</b>.</p>
   <form id="darcusOllamaForm" class="inline-form" style="flex-direction:column;align-items:stretch;gap:10px">
     <label style="display:flex;gap:8px;align-items:center">

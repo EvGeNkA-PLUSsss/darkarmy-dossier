@@ -3346,6 +3346,16 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
       if (c0 && c0.visionContext) chatVisionContext = String(c0.visionContext).slice(0, 6000);
     } catch {}
   }
+  // Задачи проекта — чтобы Darcus мог отвечать «что по задачам» и назначать исполнителей.
+  let projectTasks = [];
+  try {
+    if (projectId && projects.some(p => p.id === projectId)) {
+      projectTasks = (getProjectChat(projectId).chat.tasks || []).slice(-30).map(t => ({
+        text: t.text, status: t.status || (t.done ? 'done' : 'todo'),
+        assignee: t.assignee || null, priority: t.priority || 'normal', due: t.due || null,
+      }));
+    }
+  } catch {}
   const result = await darcus.darcusAsk({
     user: req.user,
     projects,
@@ -3353,6 +3363,7 @@ app.post('/api/darcus/chat', requireAuth, requireSubscription, rateLimitDarcus, 
     history: safeHistory,
     query: q,
     attachments: safeAtts,
+    projectTasks,
     editingFile: typeof editingFile === 'string' ? editingFile.slice(0, 500) : '', // [NEW]
     stylePreset: typeof stylePreset === 'string' ? stylePreset.slice(0, 40) : 'default',
     voiceMode: voiceMode === true,
@@ -3553,6 +3564,12 @@ app.post('/api/admin/voice/install', requireSelfAdmin, async (req, res) => {
       return res.json({ ok: true, target, log: 'Silero TTS: 127.0.0.1:8765. Первый синтез загружает модель (может занять минуту).' });
     }
     return res.status(400).json({ error: 'unknown target' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/darcus/knowledge', requireAuth, (req, res) => {
+  try {
+    res.json({ knowledge: darcus.getKnowledgeStats(), admin: req.user.role === 'admin' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

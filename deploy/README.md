@@ -164,3 +164,9 @@ curl -fsS https://dossier.example.com/api/health
 | 413 при загрузке | лимит прокси (`client_max_body_size`) или настройки загрузки в админке |
 | Сессии теряются при рестарте | не задан постоянный `SESSION_SECRET` |
 | Darcus не отвечает | Ollama не запущена или модели не установлены (статус в админ-дашборде) |
+
+## 10. Бесплатный домен и HTTPS
+
+- [free-domain.md](free-domain.md) — sslip.io, DuckDNS, Cloudflare Tunnel, Tailscale Funnel.
+- `duckdns-update.sh` — обновление DuckDNS + certbot.
+- `cloudflared-quick.sh` — временный HTTPS-туннель без белого IP.

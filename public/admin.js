@@ -967,8 +967,7 @@ function escapeHtml(s) {
    ========================================================= */
 
 /* ---------- Darcus ---------- */
-async function loadDarcusConfig() {
-  try {
+async function loadDarcusConfig() {  try {
     const c = await (await fetch('/api/darcus/config')).json();
     const f = document.getElementById('darcusOllamaForm');
     if (!f) return;
@@ -986,6 +985,14 @@ async function loadDarcusConfig() {
   'template_readme','template_meeting','template_checklist','template_report','template_note']) {
       if (pf[k]) pf[k].value = c.prompts[k] || '';
     }
+    try {
+      const kd = await (await fetch('/api/darcus/knowledge')).json();
+      const ks = document.getElementById('darcusKnowledgeStats');
+      if (ks && kd.knowledge) {
+        ks.textContent = `RAG-инструкции: ${kd.knowledge.files} документов, ${kd.knowledge.chunks} фрагментов — ` +
+          kd.knowledge.docs.join(', ');
+      }
+    } catch {}
   } catch (e) { console.warn('loadDarcusConfig:', e); }
 }
 

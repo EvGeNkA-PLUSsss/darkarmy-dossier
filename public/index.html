@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a0b0f">
 <title>DarkArmy Dossier</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5 L19.5 5.5 V11.5 C19.5 16.5 16.2 20.2 12 21.5 C7.8 20.2 4.5 16.5 4.5 11.5 V5.5 Z' stroke='%23e63946' stroke-width='1.6' fill='none'/%3E%3Cpath d='M9 11.7 L11 13.7 L15.2 9.5' stroke='%23e63946' stroke-width='1.8' fill='none'/%3E%3C/svg%3E">
+<link rel="icon" href="/icons/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="/icons/icon-192.png" sizes="192x192">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -86,6 +87,8 @@
 <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></symbol>
 <symbol id="i-help-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4"/><line x1="12" y1="17" x2="12" y2="17.01"/></symbol>
 <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></symbol>
+<symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M2 2l20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M5 12.5a10 10 0 0 1 3.5-2.4M15.5 10.1A10 10 0 0 1 19 12.5"/><path d="M2 8.8a15 15 0 0 1 4.2-2.5M17.8 6.3A15 15 0 0 1 22 8.8"/><circle cx="12" cy="20" r=".8"/></symbol>
+<symbol id="i-cloud-download" viewBox="0 0 24 24"><path d="M8 17a5 5 0 0 1-.5-9.97A6 6 0 0 1 19 9a4 4 0 0 1 0 8h-1"/><path d="M12 12v8M9 17l3 3 3-3"/></symbol>
 <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></symbol>
 <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
 <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></symbol>
@@ -120,10 +123,7 @@
     <button id="menuBtn" class="menu-btn" type="button" title="Меню" aria-label="Открыть меню">
       <svg class="ico"><use href="#i-menu"/></svg>
     </button>
-    <svg class="logo" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2.5 L19.5 5.5 V11.5 C19.5 16.5 16.2 20.2 12 21.5 C7.8 20.2 4.5 16.5 4.5 11.5 V5.5 Z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
-      <path d="M9 11.7 L11 13.7 L15.2 9.5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
+    <img class="logo" src="/icons/icon-64.png" width="24" height="24" alt="DarkArmy Dossier" style="border-radius:7px">
     <span class="brand-text">DarkArmy <span class="brand-accent">Dossier</span></span>
   </div>
   <div class="user">
@@ -143,6 +143,13 @@
 </header>
 
 <div id="ad-slot-topbar" class="ad-slot ad-topbar" data-slot="topbar"></div>
+
+<div id="offlineBanner" class="offline-banner" style="display:none">
+  <svg class="ico sm"><use href="#i-wifi-off"/></svg>
+  <span id="offlineBannerText">Офлайн-режим: только просмотр</span>
+  <button type="button" id="offlineRetryBtn">Повторить</button>
+  <button type="button" id="offlineSettingsBtn">Настройки</button>
+</div>
 
 <div id="layout">
   <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
@@ -542,6 +549,19 @@
         <input type="checkbox" id="profileShowAds" style="width:auto">
         <span>Показывать рекламу (отладка админа)</span>
       </label>
+      <h3 style="font-size:14px;margin-top:16px">Офлайн-режим</h3>
+      <div class="offline-settings">
+        <label class="offline-toggle">
+          <input type="checkbox" id="offlineModeToggle">
+          <span>Скачивать проекты для просмотра без интернета</span>
+        </label>
+        <p class="hint" id="offlineStatus">Выключен</p>
+        <div class="offline-actions">
+          <button type="button" id="offlineSyncBtn">Скачать сейчас</button>
+          <button type="button" id="offlineClearBtn">Очистить</button>
+        </div>
+        <p class="hint offline-note">Без интернета доступен только просмотр — редактирование отключается, чтобы не было конфликтов.</p>
+      </div>
       <h3 style="font-size:14px;margin-top:10px">Смена пароля</h3>
       <form id="passwordForm" class="simple-form" style="padding:0">
         <input type="password" name="current" placeholder="Текущий пароль" required>

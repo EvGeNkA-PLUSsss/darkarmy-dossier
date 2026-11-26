@@ -13,7 +13,71 @@ const appCfg = require('./config');                     // [FIX] whisper/tts env
 const DATA_DIR       = appCfg.dataDir;
 const AI_CONFIG_FILE = path.join(DATA_DIR, 'ai-config.json');
 const OCR_CACHE_FILE = path.join(DATA_DIR, 'ocr-cache.json');
+const KNOWLEDGE_DIR  = path.join(__dirname, 'ai-knowledge');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+/* ---------- RAG по инструкциям приложения ---------- */
+let knowledgeCache = { stamp: 0, chunks: [] };
+const KNOWLEDGE_STOP = new Set(('и в во не что он на я с со как а то все она так его но да ты к у же вы за бы по только ее мне было вот от меня еще нет о из ему теперь когда даже ну вдруг ли если уже или ни быть был него до вас нибудь опять уж вам ведь там потом себя ничего ей может они тут где есть надо ней для мы тебя их чем была сам чтоб без будто чего раз тоже себе под будет ж тогда кто этот того потому этого какой совсем ним здесь этом один почти мой тем чтобы нее сейчас были куда зачем сказать всех никогда сегодня можно при наконец два об другой хоть после над больше тот через эти нас про всего них какая много разве три эту моя впрочем хорошо свою этой перед иногда лучше чуть том нельзя такой им более всегда конечно всю между это как-то как-то').split(/\s+/));
+function _loadKnowledge() {
+  try {
+    const st = fs.statSync(KNOWLEDGE_DIR);
+    if (knowledgeCache.stamp === st.mtimeMs && knowledgeCache.chunks.length) return knowledgeCache.chunks;
+    const chunks = [];
+    for (const f of fs.readdirSync(KNOWLEDGE_DIR)) {
+      if (!/\.md$/i.test(f)) continue;
+      const raw = fs.readFileSync(path.join(KNOWLEDGE_DIR, f), 'utf8');
+      const title = (raw.match(/^#\s+(.+)$/m) || [])[1] || f.replace(/\.md$/, '');
+      const parts = raw.split(/\n(?=##\s+)/);
+      let intro = parts[0].replace(/^#\s+.+\n?/, '').trim();
+      if (intro) chunks.push({ file: f, title, heading: title, text: intro.slice(0, 1800) });
+      for (const part of parts.slice(1)) {
+        const hm = part.match(/^##\s+(.+)$/m);
+        const heading = hm ? hm[1].trim() : title;
+        const body = part.replace(/^##\s+.+\n?/, '').trim();
+        if (body) chunks.push({ file: f, title, heading, text: body.slice(0, 1800) });
+      }
+    }
+    knowledgeCache = { stamp: st.mtimeMs, chunks };
+    return chunks;
+  } catch { return []; }
+}
+function _normRu(s) { return String(s || '').toLowerCase().replace(/ё/g, 'е'); }
+function _stem(w) {
+  return w.replace(/(иями|ями|ами|ов|ев|ые|ая|ое|ий|ый|ой|ить|ать|ять|ение|ения|ии|ия|ей|ам|ям|ах|ях|ом|ем|ы|и|а|я|у|ю|е|о)$/u, '');
+}
+function searchInstructions(query, limit = 3) {
+  const chunks = _loadKnowledge();
+  if (!chunks.length) return [];
+  const q = _normRu(query);
+  const tokens = [...new Set((q.match(/[a-zа-я0-9]{3,}/g) || []).map(_stem).filter(t => t.length >= 3 && !KNOWLEDGE_STOP.has(t)))];
+  if (!tokens.length) return [];
+  const scored = [];
+  for (const c of chunks) {
+    const head = _normRu(c.title + ' ' + c.heading);
+    const body = _normRu(c.text);
+    let score = 0;
+    for (const t of tokens) {
+      const inHead = head.includes(t);
+      const inBody = body.split(t).length - 1;
+      if (inHead) score += 7;
+      if (inBody) score += Math.min(inBody, 6);
+    }
+    // бонус за точное совпадение фразы из 2+ слов
+    for (let i = 0; i < tokens.length - 1; i++) {
+      if (body.includes(tokens[i] + ' ' + tokens[i + 1])) score += 4;
+    }
+    if (score > 0) scored.push({ ...c, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, Math.max(1, Math.min(limit, 4)));
+}
+function getKnowledgeStats() {
+  const chunks = _loadKnowledge();
+  const files = [...new Set(chunks.map(c => c.file))];
+  return { files: files.length, chunks: chunks.length, docs: files };
+}
+
 
 const DEFAULT_PROMPTS = {
   system:
@@ -36,7 +100,7 @@ const DEFAULT_PROMPTS = {
 {"type":"create","path":"путь/файл.md","content":"содержимое"}
 <<<END ACTION>>>
 
-2. Доступные типы: create, edit, mkdir, delete, move, rename, generate_doc.
+2. Доступные типы: create, edit, mkdir, delete, move, rename, generate_doc, open, task, search.
    Один блок = одно действие. Несколько файлов = несколько блоков подряд.
 
    Форматы:
@@ -46,6 +110,9 @@ const DEFAULT_PROMPTS = {
    • rename:                  {"type":"rename","path":"путь/файл.md","newName":"Новое имя.md"}
    • generate_doc (большие документы):
      {"type":"generate_doc","path":"docs/guide.md","prompt":"что должно быть в документе"}
+   • open (открыть файл):     {"type":"open","path":"docs/guide.md"}
+   • task (создать задачу):   {"type":"task","text":"...","assignee":"логин","priority":"normal","due":"2026-12-31"}
+   • search (открыть поиск):  {"type":"search","query":"..."}
 
 3. ФОРМАТ ПОЛЯ path — самое важное:
    • path задаётся ОТНОСИТЕЛЬНО КОРНЯ ТЕКУЩЕГО ПРОЕКТА.
@@ -1043,9 +1110,15 @@ ACTION-блок. В обычном тексте ответа напиши тол
 Для небольших файлов можно использовать "type":"create" с полем content.
 Поле path всегда указывай ОТНОСИТЕЛЬНО КОРНЯ текущего проекта, без имени
 проекта и без папки проекта. Если пользователь просит показать/объяснить/обсудить —
-можно ответить текстом без ACTION.`;
+можно ответить текстом без ACTION.
 
-async function darcusAsk({ user, projects, projectId, history, query, attachments, editingFile, stylePreset, voiceMode, visionContext, onChunk, onRequest }) {
+Дополнительные полезные действия (тоже ACTION-блоком):
+- открыть файл в интерфейсе: {"type":"open","path":"docs/guide.md"}
+- создать задачу проекта: {"type":"task","text":"...","assignee":"логин","priority":"normal","due":"2026-12-31"}
+- открыть поиск с запросом: {"type":"search","query":"..."}
+Используй их, когда это уместно: «открой файл», «поставь задачу», «найди в проекте».`;
+
+async function darcusAsk({ user, projects, projectId, history, query, attachments, editingFile, stylePreset, voiceMode, visionContext, projectTasks, onChunk, onRequest }) {
   const cfg = loadAiConfig();
   const project = projects.find(p => p.id === projectId);
   const subs = buildSubs({
@@ -1089,6 +1162,19 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
   if (wiki.length) webText += 'Википедия:\n' + wiki.map((w,i)=>`${i+1}. ${w.title} — ${w.snippet||''} (${w.url})`).join('\n');
 
   const ctxParts = [];
+  // Встроенная RAG-база инструкций по самому приложению (ai-knowledge/*.md).
+  const instructionHits = searchInstructions(query, 3);
+  if (instructionHits.length) {
+    ctxParts.push('### ИНСТРУКЦИИ ПО DARKARMY DOSSIER (актуально; используй для вопросов о приложении):\n' +
+      instructionHits.map(c => `[${c.file} · ${c.heading}]\n${c.text}`).join('\n\n---\n\n'));
+  }
+  if (Array.isArray(projectTasks) && projectTasks.length) {
+    ctxParts.push('### Задачи текущего проекта:\n' + projectTasks.map(t =>
+      `- [${t.status === 'done' ? 'готово' : t.status === 'doing' ? 'в работе' : 'к выполнению'}] ${t.text}` +
+      (t.assignee ? ` · исполнитель: ${t.assignee}` : '') +
+      (t.priority && t.priority !== 'normal' ? ` · приоритет: ${t.priority}` : '') +
+      (t.due ? ` · срок: ${t.due}` : '')).join('\n'));
+  }
   if (visionContext) ctxParts.push('### Ранее приложенное изображение (полное описание/OCR):\n' + String(visionContext).slice(0, 5000));
   if (ragText) ctxParts.push('### Из файлов проектов:\n' + ragText);
   if (webText) ctxParts.push('### Из внешних источников:\n' + webText);
@@ -1105,6 +1191,13 @@ async function darcusAsk({ user, projects, projectId, history, query, attachment
   let sysPrompt = applySubs(cfg.prompts.system, subs);
   if (preset && preset.systemSuffix) sysPrompt += preset.systemSuffix;
   sysPrompt += QUALITY_PROMPT + FILE_PROMPT;
+  if (instructionHits.length) {
+    sysPrompt += '\n\n=== ИНСТРУКЦИИ DARKARMY DOSSIER ===\n' +
+      'Если вопрос касается возможностей, интерфейса, кнопок, Darcus, офлайн-режима, микрофона, ' +
+      'совместной работы, установки или деплоя — опирайся на раздел «ИНСТРУКЦИИ ПО DARKARMY DOSSIER» ' +
+      'в контексте. Не выдумывай функции, которых там нет. Если инструкция не покрывает вопрос — ' +
+      'честно скажи и предложи проверить соответствующий экран/файл.';
+  }
   if (voiceMode) {
     sysPrompt += '\n\n=== ГОЛОСОВОЙ РЕЖИМ (КРИТИЧНО) ===\n' +
       'Ответ будет озвучен вслух. КАТЕГОРИЧЕСКИ отвечай кратко: максимум 3 предложения ' +
@@ -1465,6 +1558,8 @@ module.exports = {
   ddgSearch, wikiSearch,
   darcusAsk, loadOcrCache, saveOcrCache,
   getFileSha1,
+  // RAG по встроенным инструкциям приложения
+  searchInstructions, getKnowledgeStats,
   // [FIX] новые экспорты
   rerankCandidates, lexicalRerank,
   summarizeContent,

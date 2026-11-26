@@ -195,8 +195,8 @@ python scripts/faster_whisper_stt.py base data/test.webm ru
 | «Установка недоступна» | `beforeinstallprompt` не сработал | установите через меню браузера |
 | На iOS нет кнопки | Safari не поддерживает `beforeinstallprompt` | «Поделиться» → «На экран Домой» |
 | Service worker не регистрируется | нет HTTPS или ошибка 404 `/sw.js` | проверьте `curl -I /sw.js`, откройте `chrome://serviceworker-internals` |
-| Старая версия после обновления | кэш `da-pwa-v1` | `Ctrl+F5`, DevTools → Application → Service Workers → Update |
-| Офлайн пустой экран | API не кешируется (так задумано) | это норма: офлайн доступна только оболочка |
+| Старая версия после обновления | кэш `da-pwa-v4`/`da-offline-v1` | `Ctrl+F5`, DevTools → Application → Service Workers → Update |
+| Офлайн пустой экран | офлайн-режим не включён или данные не скачаны | включите режим в профиле и нажмите «Скачать сейчас» |
 | Манифест не читается | неверный MIME/путь | `curl -I /manifest.webmanifest` → `application/manifest+json` или `application/json` |
 
 ---

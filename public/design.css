@@ -1353,9 +1353,9 @@ kbd { background: var(--bg-3, #20232c); border: 1px solid var(--border); border-
     font-size: 13px;
   }
   .darcus-head .darcus-style-select {
-    flex: 0 1 92px !important;
-    width: 92px !important;
-    max-width: 92px !important;
+    flex: 0 1 108px !important;
+    width: 108px !important;
+    max-width: 108px !important;
     min-width: 0 !important;
   }
   .darcus-head #darcusAutoApplyBtn,
@@ -1403,8 +1403,111 @@ kbd { background: var(--bg-3, #20232c); border: 1px solid var(--border); border-
   margin: auto !important;
 }
 #helpModal, #onboardingModal { align-items: center !important; justify-content: center !important; }
+
+/* ===== Офлайн-режим ===== */
+.offline-settings { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 8px; }
+.offline-toggle { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-2); color: var(--text); }
+.simple-form .offline-toggle {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start !important;
+  gap: 8px !important;
+  flex-wrap: nowrap;
+}
+.offline-toggle input[type=checkbox] {
+  width: 16px !important; height: 16px !important;
+  min-width: 16px; min-height: 0 !important; max-height: 16px !important;
+  flex: 0 0 16px; margin: 3px 0 0;
+  padding: 0 !important; box-sizing: border-box; accent-color: var(--accent);
+}
+.offline-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.offline-actions button { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer; font-size: var(--fs-2); }
+.offline-actions button:hover { border-color: var(--accent); color: var(--accent); }
+.offline-note { margin: 0; }
+.offline-banner {
+  position: fixed; left: 50%; transform: translateX(-50%); top: 8px; z-index: 90;
+  display: flex; align-items: center; gap: 8px;
+  max-width: calc(100vw - 16px);
+  padding: 7px 10px; border-radius: 10px;
+  background: rgba(35, 25, 12, .96); border: 1px solid #b7791f; color: #fde68a;
+  box-shadow: 0 8px 28px rgba(0,0,0,.45); font-size: var(--fs-2);
+}
+.offline-banner .ico { color: #fbbf24; flex: 0 0 auto; }
+.offline-banner button {
+  flex: 0 0 auto; border: 1px solid rgba(251,191,36,.45);
+  background: rgba(251,191,36,.12); color: #fde68a;
+  border-radius: 6px; padding: 3px 8px; cursor: pointer; font-size: 11px;
+}
+body.offline-mode #newFileBtn,
+body.offline-mode #newFolderBtn,
+body.offline-mode #uploadBtn,
+body.offline-mode #darcusGenBtn,
+body.offline-mode #editBtn,
+body.offline-mode #trashBtn,
+body.offline-mode #tasksBoardBtn,
+body.offline-mode .add-task-form,
+body.offline-mode .darcus-chats-bar .chat-new-btn,
+body.offline-mode .chat-form button[type=submit],
+body.offline-mode .chat-form input,
+body.offline-mode .chat-form textarea { display: none !important; }
+body.offline-mode .chat-form { opacity: .5; pointer-events: none; }
+body.offline-mode #topbar { padding-top: 34px; }
+@media (max-width: 520px) {
+  .offline-banner { top: 4px; left: 4px; right: 4px; transform: none; max-width: none; }
+  body.offline-mode #topbar { padding-top: 46px; }
+  .offline-toggle { align-items: flex-start; flex-wrap: nowrap; }
+  .offline-toggle input[type=checkbox] {
+    width: 16px !important; height: 16px !important;
+    min-width: 16px; flex: 0 0 16px; margin: 2px 0 0;
+  }
+}
+
+/* ===== Мобильная админка и профиль ===== */
+@media (max-width: 700px) {
+  #topbar .brand-text {
+    max-width: calc(100vw - 200px);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #topbar .user { flex: 0 0 auto; gap: 2px; }
+  #topbar .user #userLabel { display: none !important; }
+  #topbar .user > a,
+  #topbar .user > button {
+    width: 30px; height: 30px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0; gap: 0;
+  }
+  #topbar .user > a .ico,
+  #topbar .user > button .ico { width: 17px; height: 17px; }
+  .admin-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .admin-tabs::-webkit-scrollbar { display: none; }
+  .admin-tabs .tab { flex: 0 0 auto; white-space: nowrap; }
+  .admin-wrap, .admin-content, main.admin-main { padding-left: 10px !important; padding-right: 10px !important; }
+  .profile-modal-inner, #profileModal .modal-inner { width: 100%; }
+  #profileModal .simple-form { padding-left: 14px; padding-right: 14px; }
+  .offline-toggle input[type=checkbox] {
+    width: 16px !important; height: 16px !important;
+    min-width: 16px; flex: 0 0 16px; margin: 2px 0 0;
+  }
+}
 .bug-edit-text { width: 100%; margin-top: 8px; }
 @media (max-width: 700px) {
   .help-grid, .shortcut-list { grid-template-columns: 1fr; }
   .shortcut-list span { margin-left: 8px; }
+  /* Таблицы админки не ломают страницу на телефоне — горизонтальный скролл. */
+  #usersTable, #invitesTable, #subsTable, .data-table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  #usersTable thead, #usersTable tbody,
+  #invitesTable thead, #invitesTable tbody,
+  .data-table thead, .data-table tbody { display: table; width: 100%; min-width: 560px; }
+  .tab-panel { overflow-x: hidden; }
 }

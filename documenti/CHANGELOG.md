@@ -112,3 +112,25 @@
 - [12-development.md](12-development.md) — как вносить изменения и тесты.
 - `docs/ROADMAP.md` — аудит и план развития.
 - `docs/ACCEPTANCE.md` — акт приёмки.
+
+---
+
+## 2026-11-26 — мобильный UI, RAG-инструкции, офлайн, APK/EXE
+
+- Перерисованы иконки приложения (64/192/512/1024, maskable, favicon.ico, app.ico);
+  используются в PWA, favicon, EXE и APK.
+- Массовая адаптация под телефон: компактная шапка Darcus, топбар без переполнения,
+  профиль/помощь/админка/таблицы, окно помощи фиксированной высоты.
+- RAG по встроенным инструкциям: `ai-knowledge/` (9 документов), лексический поиск
+  top-3 чанков, вставка в контекст и system-промпт; `GET /api/darcus/knowledge`,
+  статистика в админке.
+- Новые действия Darcus: `open`, `task`, `search`; в контекст передаются задачи проекта.
+- Офлайн-режим: настройка в профиле, скачивание проектов/дерева/задач/файлов в
+  Cache Storage `da-offline-v1`, service worker v4, read-only без интернета.
+- Микрофон на HTTP: предложение открыть HTTPS/использовать серверный Whisper.
+- Готовые сборки: `release/DarkArmyDossier.exe` (Windows launcher) и
+  `release/DarkArmyDossier.apk` (WebView, debug-подпись); исходники `android/`,
+  `desktop/launcher/`.
+- Бесплатный домен для IP: `deploy/free-domain.md`, `duckdns-update.sh`,
+  `cloudflared-quick.sh`.
+- Тесты: 50/50 (добавлены тесты RAG-инструкций).

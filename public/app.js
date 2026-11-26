@@ -139,8 +139,17 @@ async function toggleRecording(btn) {
   if (!window.isSecureContext) {
     // HTTP в локальной сети: getUserMedia недоступен, но нативный диктофон телефона
     // можно открыть через <input capture> — запись уйдёт на серверный Whisper.
+    const httpsUrl = 'https://' + location.hostname + ':7562' + location.pathname + location.search;
+    const goHttps = await dlC(
+      'Браузер разрешает микрофон только по HTTPS или на localhost.\n\n' +
+      'Открыть HTTPS-версию по адресу ' + httpsUrl + '?\n' +
+      'Сертификат может быть самоподписанным — нажмите «Дополнительно → Перейти».\n\n' +
+      'Если выбрать «Отмена», можно записать голос через системный диктофон (если включён серверный Whisper).',
+      'Микрофон и HTTPS'
+    );
+    if (goHttps) { location.href = httpsUrl; return; }
     if (state.voiceCaps && state.voiceCaps.stt) return recordViaNativeCapture(btn);
-    return dlA('Микрофон в браузере доступен только по HTTPS или на localhost. На этом ПК откройте http://127.0.0.1:7561, с телефона — https://' + location.hostname + ':7562 (примите сертификат). Также можно включить серверный Whisper в админке: тогда запись пойдёт через системный диктофон.', 'Микрофон недоступен');
+    return dlA('Микрофон в браузере доступен только по HTTPS или на localhost. Включите HTTPS-порт (7562) или серверный Whisper, либо откройте с ПК http://127.0.0.1:7561.', 'Микрофон недоступен');
   }
   // Если серверный Whisper не настроен — используем распознавание браузера (Chrome/Edge).
   if (state.voiceCaps && !state.voiceCaps.stt && getBrowserSpeechRecognition()) {
@@ -300,6 +309,7 @@ const state = {
   darcusContext: null,
   inlineEditFile: null,
   subscription: { active: false, until: null, forceAdmin: false },
+  offline: false, offlineSyncing: false,
   adsData: null, adsTimers: new Map(),
   adsDebug: (localStorage.getItem('showAds') === '1'),
   ttsAudio: null,
@@ -471,6 +481,7 @@ function initVersionWatch() {
   safe('version-watch', initVersionWatch);
   safe('help', initHelpAndOnboarding);
   safe('pwa', initPwa);
+  safe('offline', initOfflineMode);
 
     try { connectSSE(); } catch (e) { console.error('SSE failed:', e); }
 
@@ -1141,6 +1152,7 @@ function initMarkdownDrop() {
   }
 }
 function canEditCurrentProject() {
+  if (state.offline) return false;
   const p = state.currentProject; if (!p) return false;
   if (state.user.role === 'admin') return true;
   return p.myRole === 'editor' || p.myRole === 'creator';
@@ -1767,23 +1779,25 @@ async function renderFileContent() {
      рендер превращал его в <p>not found</p>. Теперь ловим честно.
      ============================================================ */
   try {
-    const head = await fetch(url, { method: 'HEAD' });
-    if (!head.ok) {
-      if (head.status === 404) {
-        contentEl.innerHTML =
-          `<p class="err">Файл не найден: <b>${escapeHtml(p)}</b></p>` +
-          `<p class="hint">Возможно, он был удалён или переименован. Обновите дерево.</p>`;
-        state.currentFile = null;
-        if (state.projectId) {
-          delete state.lastFileByProject[state.projectId];
-          try { localStorage.setItem('lastFileByProject', JSON.stringify(state.lastFileByProject)); } catch {}
+    if (!state.offline) {
+      const head = await fetch(url, { method: 'HEAD' });
+      if (!head.ok) {
+        if (head.status === 404) {
+          contentEl.innerHTML =
+            `<p class="err">Файл не найден: <b>${escapeHtml(p)}</b></p>` +
+            `<p class="hint">Возможно, он был удалён или переименован. Обновите дерево.</p>`;
+          state.currentFile = null;
+          if (state.projectId) {
+            delete state.lastFileByProject[state.projectId];
+            try { localStorage.setItem('lastFileByProject', JSON.stringify(state.lastFileByProject)); } catch {}
+          }
+          if (filebarEl) filebarEl.style.display = 'none';
+          showToast(`Файл «${p}» больше не существует — дерево обновлено`);
+          await loadTree();
+          return;
         }
-        if (filebarEl) filebarEl.style.display = 'none';
-        showToast(`Файл «${p}» больше не существует — дерево обновлено`);
-        await loadTree();
-        return;
+        throw new Error(`HTTP ${head.status}`);
       }
-      throw new Error(`HTTP ${head.status}`);
     }
   } catch (e) {
     contentEl.innerHTML = `<p class="err">Ошибка загрузки: ${escapeHtml(e.message)}</p>`;
@@ -2256,6 +2270,184 @@ async function autoCreateFileFromQuery(query) {
     if (!r.ok) return null;
     return d;
   } catch { return null; }
+}
+
+/* =========================================================
+   Офлайн-режим: просмотр без интернета, без редактирования
+   ========================================================= */
+const OFFLINE_CACHE = 'da-offline-v1';
+const OFFLINE_MAX_FILES = 600;
+const OFFLINE_MAX_BYTES = 250 * 1024 * 1024;
+function offlineModeEnabled() {
+  try { return localStorage.getItem('da_offline_mode') === '1'; } catch { return false; }
+}
+function offlineMeta() {
+  try { return JSON.parse(localStorage.getItem('da_offline_meta') || 'null'); } catch { return null; }
+}
+function saveOfflineMeta(meta) {
+  try { localStorage.setItem('da_offline_meta', JSON.stringify(meta)); } catch {}
+}
+function setOfflineStatus(text) {
+  const el = document.getElementById('offlineStatus');
+  if (el) el.textContent = text;
+}
+function renderOfflineSetting() {
+  const toggle = document.getElementById('offlineModeToggle');
+  if (!toggle) return;
+  const enabled = offlineModeEnabled();
+  toggle.checked = enabled;
+  const meta = offlineMeta();
+  if (!enabled) setOfflineStatus('Выключен');
+  else if (!('caches' in window)) setOfflineStatus('Недоступен: нужен HTTPS или localhost');
+  else if (!meta) setOfflineStatus('Включён, данные ещё не скачаны');
+  else setOfflineStatus(`Скачано: ${meta.files || 0} файлов, ${meta.projects || 0} проектов · ${new Date(meta.at).toLocaleString('ru-RU')}`);
+  const banner = document.getElementById('offlineBanner');
+  if (banner && state.offline) banner.style.display = 'flex';
+}
+async function clearOfflineData() {
+  try { await caches.delete(OFFLINE_CACHE); } catch {}
+  try { localStorage.removeItem('da_offline_meta'); } catch {}
+  setOfflineStatus('Данные удалены');
+}
+async function syncOfflineData() {
+  if (state.offlineSyncing) return;
+  if (!('caches' in window)) throw new Error('Офлайн-кэш доступен только по HTTPS или localhost');
+  state.offlineSyncing = true;
+  const syncBtn = document.getElementById('offlineSyncBtn');
+  if (syncBtn) { syncBtn.disabled = true; syncBtn.textContent = 'Скачиваю…'; }
+  try {
+    await caches.delete(OFFLINE_CACHE);
+    const cache = await caches.open(OFFLINE_CACHE);
+    let files = 0, projects = 0, bytes = 0;
+    const putJson = async (url) => {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
+      await cache.put(url, r.clone());
+      return r.json();
+    };
+    const collectFiles = (nodes, out = []) => {
+      for (const n of nodes || []) {
+        if (n.isDir) collectFiles(n.children, out);
+        else if (n.path) out.push(n.path);
+      }
+      return out;
+    };
+    setOfflineStatus('Скачиваю проекты…');
+    await putJson('/api/me').catch(() => {});
+    const pj = await putJson('/api/projects');
+    const list = pj.projects || [];
+    for (const p of list) {
+      projects++;
+      setOfflineStatus(`Скачиваю «${p.name}»… ${projects}/${list.length}`);
+      let tree = { tree: [] };
+      try { tree = await putJson('/api/tree?projectId=' + encodeURIComponent(p.id)); } catch {}
+      try { await putJson('/api/projects/' + encodeURIComponent(p.id) + '/tasks'); } catch {}
+      const paths = collectFiles(tree.tree);
+      for (const rel of paths) {
+        if (files >= OFFLINE_MAX_FILES || bytes >= OFFLINE_MAX_BYTES) break;
+        const url = '/files/' + p.id + '/' + encodePath(rel);
+        try {
+          const r = await fetch(url, { cache: 'no-store' });
+          if (!r.ok) continue;
+          const len = Number(r.headers.get('content-length')) || 0;
+          await cache.put(url, r.clone());
+          files++; bytes += len;
+        } catch {}
+      }
+    }
+    const meta = { at: new Date().toISOString(), files, projects, bytes };
+    saveOfflineMeta(meta);
+    setOfflineStatus(`Скачано: ${files} файлов, ${projects} проектов · ${new Date().toLocaleString('ru-RU')}`);
+    showToast(`Офлайн-данные готовы: ${files} файлов`);
+  } finally {
+    state.offlineSyncing = false;
+    const btn = document.getElementById('offlineSyncBtn');
+    if (btn) { btn.disabled = false; btn.textContent = 'Скачать сейчас'; }
+  }
+}
+async function checkOfflineState(forceToast = false) {
+  if (!offlineModeEnabled()) {
+    state.offline = false;
+    document.body.classList.remove('offline-mode');
+    const b = document.getElementById('offlineBanner'); if (b) b.style.display = 'none';
+    return false;
+  }
+  let down = !navigator.onLine;
+  if (!down) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 4000);
+      const r = await fetch('/api/health', { cache: 'no-store', signal: ctrl.signal });
+      clearTimeout(t);
+      down = !r.ok;
+    } catch { down = true; }
+  }
+  const was = state.offline;
+  state.offline = down;
+  document.body.classList.toggle('offline-mode', down);
+  const banner = document.getElementById('offlineBanner');
+  const text = document.getElementById('offlineBannerText');
+  if (banner) banner.style.display = down ? 'flex' : 'none';
+  if (text && down) {
+    const meta = offlineMeta();
+    text.textContent = 'Офлайн-режим: только просмотр' + (meta ? ` · ${meta.files} файлов` : '');
+  }
+  if (down && (!was || forceToast)) showToast('Нет связи: доступен только просмотр');
+  if (!down && was) {
+    showToast('Интернет вернулся — редактирование снова доступно');
+    try { await loadTree(); } catch {}
+  }
+  return down;
+}
+function initOfflineMode() {
+  renderOfflineSetting();
+  const toggle = document.getElementById('offlineModeToggle');
+  const syncBtn = document.getElementById('offlineSyncBtn');
+  const clearBtn = document.getElementById('offlineClearBtn');
+  if (toggle) toggle.onchange = async () => {
+    if (toggle.checked) {
+      try { localStorage.setItem('da_offline_mode', '1'); } catch {}
+      renderOfflineSetting();
+      try { await syncOfflineData(); } catch (e) {
+        showToast('Офлайн-режим: ' + e.message);
+        setOfflineStatus('Ошибка: ' + e.message);
+      }
+      await checkOfflineState();
+    } else {
+      try { localStorage.removeItem('da_offline_mode'); } catch {}
+      await clearOfflineData();
+      renderOfflineSetting();
+      await checkOfflineState();
+    }
+  };
+  if (syncBtn) syncBtn.onclick = async () => {
+    if (!offlineModeEnabled()) {
+      const t = document.getElementById('offlineModeToggle');
+      if (t) { t.checked = true; await t.onchange(); return; }
+    }
+    try { await syncOfflineData(); } catch (e) { showToast('Ошибка загрузки: ' + e.message); }
+  };
+  if (clearBtn) clearBtn.onclick = async () => { await clearOfflineData(); renderOfflineSetting(); };
+  document.getElementById('offlineRetryBtn')?.addEventListener('click', async () => {
+    await checkOfflineState(true);
+    if (!state.offline) try { location.reload(); } catch {}
+  });
+  document.getElementById('offlineSettingsBtn')?.addEventListener('click', () => {
+    document.getElementById('profileBtn')?.click();
+  });
+  // Никаких изменений через API в офлайне.
+  const origFetch = window.fetch.bind(window);
+  window.fetch = function(input, init) {
+    const method = String((init && init.method) || 'GET').toUpperCase();
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (state.offline && method !== 'GET' && url.startsWith('/api/')) {
+      return Promise.reject(new Error('Офлайн-режим: редактирование недоступно'));
+    }
+    return origFetch(input, init);
+  };
+  window.addEventListener('online', () => checkOfflineState(true));
+  window.addEventListener('offline', () => checkOfflineState(true));
+  if (offlineModeEnabled()) setTimeout(() => checkOfflineState(false), 800);
 }
 
 /* =========================================================
@@ -4538,6 +4730,7 @@ function initProfileExt() {
       line.style.display = '';
       actBox.style.display = has ? 'none' : 'flex';
       adsChk.parentElement.style.display = (state.user?.role === 'admin') ? 'flex' : 'none';
+      try { renderOfflineSetting(); } catch {}
     };
   }
   if (actBtn) actBtn.onclick = async () => {
@@ -5151,10 +5344,13 @@ function doPrint() {
    [FIX v2] Распознаём и ACTION, и <<>>…<<>>, и <<<ACTION>>>…<<<END ACTION>>>
    ========================================================= */
 const AI_ACTION_RE = /<{2,3}\s*(?:ACTION\s*)?>{2,3}\s*(\{[\s\S]*?\})\s*<{2,3}\s*(?:END\s+ACTION\s*)?>{2,3}/gi;
-const AI_ACTION_TYPES = new Set(['create', 'edit', 'mkdir', 'delete', 'move', 'rename', 'generate_doc']);
+const AI_ACTION_TYPES = new Set(['create', 'edit', 'mkdir', 'delete', 'move', 'rename', 'generate_doc', 'open', 'task', 'search']);
 const AI_ACTION_LABELS = {
   create: 'создал файл',
   generate_doc: 'создал документ',
+  open: 'открыл файл',
+  task: 'создал задачу',
+  search: 'открыл поиск',
   edit:   'изменил файл',
   mkdir:  'создал папку',
   delete: 'удалил',
@@ -5242,6 +5438,8 @@ async function runAiAction(act) {
     if (!from || !to) return { ok: false, error: 'move без путей' };
   } else if (type === 'rename') {
     if (!path || !newName) return { ok: false, error: 'rename без пути' };
+  } else if (type === 'task' || type === 'search') {
+    // у этих действий нет обязательного path
   } else {
     if (!path) return { ok: false, error: 'пустое имя файла' };
   }
@@ -5249,6 +5447,9 @@ async function runAiAction(act) {
   const LBL = {
     create: 'создать файл',
     generate_doc: 'создать документ',
+    open: 'открыть файл',
+    task: 'создать задачу',
+    search: 'открыть поиск',
     edit:   'изменить файл',
     mkdir:  'создать папку',
     delete: 'удалить',
@@ -5262,13 +5463,37 @@ async function runAiAction(act) {
   if ((type === 'create' || type === 'edit') && content) {
     preview = '\n\nСодержимое (начало):\n' + content.slice(0, 400) + (content.length > 400 ? '\n…' : '');
   }
+  const targetLabel = path || (from && to ? from + ' → ' + to : '') || act.text || act.query || '';
   const ok = darcusAutoApplyOn() ? true : await dlC(
-    `Darcus предлагает ${label}:\n\n${path || from + ' → ' + to}${preview}\n\nПрименить действие?`,
+    `Darcus предлагает ${label}:\n\n${targetLabel}${preview}\n\nПрименить действие?`,
     'Действие Darcus — подтверждение'
   );
   if (!ok) return { ok: false, canceled: true };
 
   try {
+    if (type === 'open') {
+      await openFile(path);
+      return { ok: true, type: 'open', path, projectId: state.projectId };
+    }
+    if (type === 'task') {
+      const text = String(act.text || act.content || path || '').trim().slice(0, 500);
+      if (!text) throw new Error('task: пустой текст задачи');
+      await createTask(text, act.status || 'todo', act.assignee || null, act.priority || 'normal', act.due || null);
+      return { ok: true, type: 'task', projectId: state.projectId };
+    }
+    if (type === 'search') {
+      const query = String(act.query || act.text || path || '').trim();
+      if (!query) throw new Error('search: пустой запрос');
+      document.getElementById('searchBtn')?.click();
+      setTimeout(() => {
+        const inp = document.getElementById('searchInput');
+        if (inp) {
+          inp.value = query;
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }, 250);
+      return { ok: true, type: 'search', projectId: state.projectId };
+    }
     if (type === 'generate_doc') {
       const dir  = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
       const name = path.split('/').pop();
@@ -5492,7 +5717,7 @@ function _renderActionResult(rawJson) {
     if (!r.ok) {
       return `\n\n<div class="darcus-action-done error">⚠️ <b>Darcus не выполнил действие</b>${r.error ? ': ' + escapeHtml(String(r.error).slice(0, 200)) : ''}</div>\n\n`;
     }
-    const labels = { create: 'создал файл', edit: 'изменил файл', mkdir: 'создал папку', delete: 'удалил', move: 'переместил', rename: 'переименовал' };
+    const labels = { create: 'создал файл', edit: 'изменил файл', mkdir: 'создал папку', delete: 'удалил', move: 'переместил', rename: 'переименовал', open: 'открыл файл', task: 'создал задачу', search: 'открыл поиск', generate_doc: 'создал документ' };
     const label = labels[r.type] || 'выполнил действие';
     const path = String(r.path || '').slice(0, 300);
     const kind = r.type === 'mkdir' ? 'dir' : 'file';

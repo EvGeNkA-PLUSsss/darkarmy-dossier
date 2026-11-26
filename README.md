@@ -228,9 +228,20 @@ data/              SQLite-БД, JSON-архив, вложения (не комм
 ### Приложение на ПК и телефон
 
 - PWA уже встроено: при открытии по HTTPS (или localhost) появляется «Установить приложение».
+- **Готовые сборки:** `release/DarkArmyDossier.exe` (Windows-лаунчер) и
+  `release/DarkArmyDossier.apk` (Android WebView-клиент). Подробнее — [release/README.md](release/README.md).
 - Windows-окно без установки: `desktop\open-windows-app.cmd`.
 - Electron-сборка: `desktop/electron` (`npm install && npm run dist`). Подробнее — [desktop/README.md](desktop/README.md).
-- Android: «Добавить на главный экран» в Chrome либо APK через Bubblewrap (см. документацию).
+- Android: «Добавить на главный экран» в Chrome либо установить APK.
+
+### Офлайн-режим и RAG
+
+- **Офлайн-режим** (Профиль → «Офлайн-режим»): скачивает проекты/файлы и позволяет
+  только просматривать их без интернета; редактирование отключается. Нужен HTTPS/localhost.
+- **RAG-инструкции Darcus**: папка `ai-knowledge/` автоматически подмешивается в контекст,
+  чтобы ИИ знал интерфейс, действия, офлайн, микрофон, деплой и т.д.
+- **Бесплатный домен для IP**: [deploy/free-domain.md](deploy/free-domain.md)
+  (sslip.io, DuckDNS, Cloudflare Tunnel, Tailscale Funnel).
 
 ### Быстрый деплой на Ubuntu
 

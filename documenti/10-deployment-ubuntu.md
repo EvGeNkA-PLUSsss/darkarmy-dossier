@@ -674,3 +674,19 @@ curl -fsS http://127.0.0.1:7561/api/health
 - [09-desktop-mobile-pwa.md](09-desktop-mobile-pwa.md) — домен для APK.
 - [11-troubleshooting.md](11-troubleshooting.md) — nginx 502/413/SSE.
 - [13-admin-guide.md](13-admin-guide.md) — эксплуатация из админки.
+
+---
+
+## Бесплатный домен для IP
+
+Подробная инструкция: [deploy/free-domain.md](../deploy/free-domain.md).
+
+Кратко:
+- **sslip.io** — домен из IP (`1-2-3-4.sslip.io`), без регистрации; нужен публичный IP и порты 80/443.
+- **DuckDNS** — бесплатный `name.duckdns.org` + cron-обновление IP; скрипт `deploy/duckdns-update.sh`.
+- **Cloudflare Tunnel** — HTTPS без белого IP; скрипт `deploy/cloudflared-quick.sh`.
+- **Tailscale Funnel** — если сервер и клиенты в Tailscale.
+- Для Let's Encrypt нужен домен и доступный порт 80 (или DNS-01).
+
+После домена: `server_name` в nginx, `certbot --nginx -d домен`, открыть
+`https://домен` — PWA установится, микрофон заработает.

@@ -18,7 +18,16 @@
 
 ## 2. Отдельное окно на Windows без установки
 
-Запустите сервер, затем:
+Готовый лаунчер: **`release/DarkArmyDossier.exe`**. Он сам поднимает локальный сервер
+(если тот не запущен) и открывает Dossier в отдельном окне Edge/Chrome.
+
+Пересборка:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File desktop/launcher/build-exe.ps1
+```
+
+Либо запустите сервер и откройте окно вручную:
 
 ```bat
 desktop\open-windows-app.cmd

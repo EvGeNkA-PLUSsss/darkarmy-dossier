@@ -825,3 +825,19 @@ data: {"key":"default::docs/a.md","projectId":"default","file":"docs/a.md","user
 - [08-security.md](08-security.md) — права, лимиты, CSRF/сессии.
 - [13-admin-guide.md](13-admin-guide.md) — админские маршруты в интерфейсе.
 - [11-troubleshooting.md](11-troubleshooting.md) — ошибки API на практике.
+
+---
+
+## Новые маршруты (2026-11-26)
+
+| Метод | Маршрут | Доступ | Описание |
+|---|---|---|---|
+| GET | `/api/darcus/knowledge` | requireAuth | статистика RAG-инструкций `{knowledge:{files,chunks,docs},admin}` |
+| PATCH | `/api/bugs/:id` | requireSelfAdmin | редактирование описания/скриншота бага; body `{description?, page?, screenshot?}` |
+
+ACTION-типы клиента: `open` (`path`), `task` (`text`, `assignee?`, `priority?`, `due?`, `status?`),
+`search` (`query`). Остальные (`create`, `edit`, `mkdir`, `delete`, `move`, `rename`,
+`generate_doc`) — как раньше.
+
+Офлайн-режим: клиент наполняет Cache Storage `da-offline-v1` через `/api/projects`,
+`/api/tree`, `/api/projects/:id/tasks` и `/files/:project/:path`; серверных изменений нет.

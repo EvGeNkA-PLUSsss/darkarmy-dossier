@@ -265,4 +265,15 @@ TRUST_PROXY=false
 - Настраиваете ИИ — [06-ai-darcus.md](06-ai-darcus.md).
 - Пишете интеграцию — [04-api.md](04-api.md) и [05-data-model.md](05-data-model.md).
 - Что-то сломалось — [11-troubleshooting.md](11-troubleshooting.md).
+
+## Новые разделы (добавлены 2026-11-26)
+
+- **RAG-инструкции для Darcus** — папка `ai-knowledge/` (9 документов), автоматически
+  подмешиваются в контекст; см. [06-ai-darcus.md](06-ai-darcus.md#rag-по-встроенным-инструкциям-приложения).
+- **Офлайн-режим** — [03-user-guide.md](03-user-guide.md#офлайн-режим-только-просмотр)
+  и [09-desktop-mobile-pwa.md](09-desktop-mobile-pwa.md#готовые-сборки-и-офлайн-режим-актуально).
+- **APK и EXE** — `release/` + [09-desktop-mobile-pwa.md](09-desktop-mobile-pwa.md#готовые-сборки-и-офлайн-режим-актуально).
+- **Бесплатный домен для IP** — [deploy/free-domain.md](../deploy/free-domain.md).
+- **Микрофон на HTTP** — [09-desktop-mobile-pwa.md](09-desktop-mobile-pwa.md#микрофон-на-http).
+- **Новые действия Darcus** (`open`, `task`, `search`) — [06-ai-darcus.md](06-ai-darcus.md#rag-по-встроенным-инструкциям-приложения).
 - Вопросы «а можно ли…» — [14-faq.md](14-faq.md).

@@ -2,6 +2,9 @@
 node_modules/
 desktop/electron/node_modules/
 desktop/electron/dist/
+android/build/
+android/debug.keystore
+android/res/
 
 # Секреты и локальная конфигурация
 .env
@@ -33,3 +36,6 @@ playwright-report/
 
 __pycache__/
 *.pyc
+
+# Android v4 signature sidecar
+*.idsig

@@ -69,7 +69,7 @@
 
 | Свойство | Значение |
 |---|---|
-| Имя кэша | `da-pwa-v2` |
+| Имя кэша | `da-pwa-v4` |
 | Предзагрузка (CORE) | `/`, `/index.html`, `/app.js`, `/design.css`, `/manifest.webmanifest`, 4 иконки |
 | Установка | `Promise.allSettled(CORE.map(c.add))` + `skipWaiting()` |
 | Активация | удаление всех кэшей, кроме текущего, + `clients.claim()` |
@@ -88,7 +88,7 @@ if ('serviceWorker' in navigator &&
 }
 ```
 
-Обновление оболочки: измените `VERSION` в `sw.js` (`da-pwa-v2`) и перезагрузите страницу.
+Обновление оболочки: измените `VERSION` в `sw.js` (`da-pwa-v4`) и перезагрузите страницу.
 При этом старый кэш будет удалён на `activate`.
 
 ### Кнопка установки
@@ -378,10 +378,11 @@ adb install -r app-release-signed.apk
 3. **Нет нативных интеграций**: share-таргет, «Открыть в…», системные файлы — не реализованы.
 4. **Микрофон/камера** требуют HTTPS и разрешений.
 5. **Service worker** может быть очищен ОС (особенно iOS) — оболочка загрузится заново.
-6. **Electron** не запускает сервер сам: нужно отдельно держать `server.js`
-   (в `main.js` нет порождения процесса).
-7. **Подпись кода** для Electron/APK не настроена.
-8. **APK** — только через внешнюю сборку; `assetlinks.json` сервер не отдаёт.
+6. **Electron-обёртка** (`desktop/electron`) не запускает сервер сама — для этого есть
+   отдельный Windows-лаунчер `release/DarkArmyDossier.exe`.
+7. **Подпись кода** для Electron/APK не настроена (APK подписан debug-ключом).
+8. **APK** собран как WebView-клиент (`release/DarkArmyDossier.apk`), без TWA/assetlinks;
+   для PWA-установки используйте Chrome по HTTPS.
 9. **PWA-ярлыки** (`shortcuts`) поддерживаются не всеми лаунчерами и браузерами.
 10. **Установка по HTTP в LAN** невозможна; для телефонов без домена используйте
     самоподписанный HTTPS-порт и добавляйте сертификат в доверенные.
@@ -396,3 +397,32 @@ adb install -r app-release-signed.apk
 - [10-deployment-ubuntu.md](10-deployment-ubuntu.md) — домен и сертификаты для APK.
 - [11-troubleshooting.md](11-troubleshooting.md) — «PWA не ставится».
 - [12-development.md](12-development.md) — как менять `sw.js` и `manifest`.
+
+---
+
+## Готовые сборки и офлайн-режим (актуально)
+
+В репозитории есть папка `release/`:
+
+| Файл | Что это |
+|---|---|
+| `release/DarkArmyDossier.exe` | Windows-лаунчер (.NET Framework): запускает сервер и открывает отдельное окно Edge/Chrome |
+| `release/DarkArmyDossier.apk` | Android WebView-клиент, debug-подпись; при первом запуске спрашивает адрес сервера |
+| `release/README.md` | инструкции по установке/пересборке |
+
+Иконки приложения перерисованы (`public/icons/`: 64/192/512/1024, maskable, `favicon.ico`, `app.ico`),
+используются в PWA, favicon, EXE и APK.
+
+### Офлайн-режим
+
+- Включается в профиле (кнопка-человечек) → «Офлайн-режим».
+- При включении скачиваются проекты, деревья, задачи и файлы (Cache Storage).
+- Без интернета доступен только просмотр; редактирование/чат/Darcus/задачи отключаются.
+- Работает по HTTPS или localhost (service worker + Cache API).
+- Кнопки «Скачать сейчас» / «Очистить» управляют кэшем.
+
+### Микрофон на HTTP
+
+Браузер требует secure context. При нажатии микрофона по HTTP приложение предлагает
+открыть HTTPS-версию (порт 7562/домен) либо записать через системный диктофон при
+включённом серверном Whisper. См. [deploy/free-domain.md](../deploy/free-domain.md).

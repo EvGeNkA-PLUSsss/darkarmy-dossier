@@ -59,3 +59,15 @@ test('parseVisionJson: понимает ```json и реальные перево
   assert.equal(flat.text, 't');
   assert.equal(darcus.parseVisionJson('не json'), null);
 });
+
+test('RAG инструкций: документы загружены и поиск находит нужный раздел', () => {
+  const stats = darcus.getKnowledgeStats();
+  assert.ok(stats.files >= 5, 'должно быть несколько инструкций');
+  assert.ok(stats.chunks >= 10, 'инструкции должны быть разбиты на чанки');
+  const offline = darcus.searchInstructions('как включить офлайн режим и скачать проекты', 3);
+  assert.ok(offline.length > 0);
+  assert.ok(offline.some(x => x.file.includes('mobile-offline') || x.heading.toLowerCase().includes('офлайн')));
+  const actions = darcus.searchInstructions('какие действия ACTION умеет Darcus generate_doc', 3);
+  assert.ok(actions.some(x => x.file.includes('actions') || x.file.includes('darcus')));
+});
+
