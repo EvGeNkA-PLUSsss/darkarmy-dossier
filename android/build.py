@@ -55,11 +55,15 @@ run([os.path.join(BT, 'aapt2.exe' if os.name == 'nt' else 'aapt2'), 'compile', '
 run([os.path.join(BT, 'aapt2.exe' if os.name == 'nt' else 'aapt2'), 'link', '-o', os.path.join(build, 'base.apk'),
      '-I', PLATFORM, '--manifest', os.path.join(AND, 'AndroidManifest.xml'), '-R', os.path.join(build, 'res.zip'),
      '--java', os.path.join(build, 'out'), '--auto-add-overlay'])
-run([os.path.join(JAVA_HOME, 'bin', 'javac.exe' if os.name == 'nt' else 'javac'), '-source', '8', '-target', '8',
+run([os.path.join(JAVA_HOME, 'bin', 'javac.exe' if os.name == 'nt' else 'javac'), '-encoding', 'UTF-8', '-source', '8', '-target', '8',
      '-bootclasspath', PLATFORM, '-d', os.path.join(build, 'classes'),
      os.path.join(AND, 'src', 'com', 'darkarmy', 'dossier', 'MainActivity.java')])
+class_dir = os.path.join(build, 'classes', 'com', 'darkarmy', 'dossier')
+class_files = sorted(glob.glob(os.path.join(class_dir, '*.class')))
+if not class_files:
+    sys.exit('Нет скомпилированных классов в ' + class_dir)
 run([os.path.join(BT, 'd8.bat' if os.name == 'nt' else 'd8'), '--release', '--min-api', '24', '--lib', PLATFORM,
-     '--output', os.path.join(build, 'dex'), os.path.join(build, 'classes', 'com', 'darkarmy', 'dossier', 'MainActivity.class')])
+     '--output', os.path.join(build, 'dex')] + class_files)
 with zipfile.ZipFile(os.path.join(build, 'base.apk'), 'a', zipfile.ZIP_DEFLATED) as z:
     z.write(os.path.join(build, 'dex', 'classes.dex'), 'classes.dex')
 run([os.path.join(BT, 'zipalign.exe' if os.name == 'nt' else 'zipalign'), '-f', '-p', '4',
