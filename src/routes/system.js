@@ -106,7 +106,14 @@ module.exports = function createSystemRouter(deps) {
 
   /* ---------- Телеметрия ---------- */
   router.get('/api/telemetry', requireSelfAdmin, (req, res) => {
-    res.json({ users: storage.listTelemetryUsers() });
+    const users = storage.listTelemetryUsers().map(u => {
+      let lastClient = null;
+      try {
+        lastClient = storage.getTelemetry(u.username, 80).events.find(e => e.type === 'client-info') || null;
+      } catch {}
+      return { ...u, lastClient };
+    });
+    res.json({ users });
   });
 
   router.get('/api/telemetry/:username', requireSelfAdmin, (req, res) => {

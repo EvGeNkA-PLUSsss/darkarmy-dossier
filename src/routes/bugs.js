@@ -105,6 +105,40 @@ module.exports = function createBugsRouter(deps) {
     res.sendFile(file);
   });
 
+  router.patch('/api/bugs/:id', requireSelfAdmin, (req, res) => {
+    const data = load();
+    const item = data.items.find(i => i.id === req.params.id);
+    if (!item) return res.status(404).json({ error: 'not found' });
+    const description = String(req.body?.description ?? item.description).trim().slice(0, 4000);
+    if (description.length < 1) return res.status(400).json({ error: 'Пустое описание' });
+    item.description = description;
+    if (typeof req.body?.page === 'string') item.page = req.body.page.slice(0, 500);
+    const rawShot = req.body?.screenshot;
+    if (rawShot) {
+      if (typeof rawShot !== 'string' || rawShot.length > MAX_SHOT_BYTES * 1.4)
+        return res.status(413).json({ error: 'Скриншот слишком большой (макс. 3 МБ)' });
+      const m = rawShot.match(IMG_RE);
+      if (!m) return res.status(400).json({ error: 'Скриншот должен быть PNG/JPG/WEBP' });
+      const buf = Buffer.from(m[2].replace(/\s+/g, ''), 'base64');
+      if (buf.length > MAX_SHOT_BYTES) return res.status(413).json({ error: 'Скриншот больше 3 МБ' });
+      const ext = EXT_BY_MIME[m[1].toLowerCase()] || 'png';
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+        const old = item.file ? path.join(dir, path.basename(item.file)) : null;
+        const name = item.id + '.' + ext;
+        fs.writeFileSync(path.join(dir, name), buf);
+        if (old && old !== path.join(dir, name)) { try { fs.unlinkSync(old); } catch {} }
+        item.file = name;
+        item.mime = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
+      } catch (e) { return res.status(500).json({ error: 'Не удалось сохранить скриншот' }); }
+    }
+    item.editedAt = new Date().toISOString();
+    item.editedBy = req.user.username;
+    save(data);
+    logger.info({ id: item.id, by: req.user.username }, 'bug report edited');
+    res.json({ ok: true, item: publicItem(item) });
+  });
+
   router.delete('/api/bugs/:id', requireSelfAdmin, (req, res) => {
     const data = load();
     const idx = data.items.findIndex(i => i.id === req.params.id);

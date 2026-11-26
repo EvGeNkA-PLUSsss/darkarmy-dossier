@@ -214,10 +214,32 @@ data/              SQLite-БД, JSON-архив, вложения (не комм
 
 ## Документация
 
+- [Полная документация проекта](documenti/README.md) — архитектура, API, БД, ИИ, совместная работа, админка, деплой.
+- [Установка](documenti/02-installation.md)
+- [Пользовательский гайд](documenti/03-user-guide.md)
+- [API](documenti/04-api.md)
+- [Развёртывание на Ubuntu](documenti/10-deployment-ubuntu.md)
+- [ПК/телефон/PWA](documenti/09-desktop-mobile-pwa.md)
 - [Аудит и план развития](docs/ROADMAP.md)
 - [Приёмка production-готовности](docs/ACCEPTANCE.md)
-- [Развёртывание](deploy/README.md)
+- [Развёртывание (deploy/)](deploy/README.md)
 - [.env.example](.env.example)
+
+### Приложение на ПК и телефон
+
+- PWA уже встроено: при открытии по HTTPS (или localhost) появляется «Установить приложение».
+- Windows-окно без установки: `desktop\open-windows-app.cmd`.
+- Electron-сборка: `desktop/electron` (`npm install && npm run dist`). Подробнее — [desktop/README.md](desktop/README.md).
+- Android: «Добавить на главный экран» в Chrome либо APK через Bubblewrap (см. документацию).
+
+### Быстрый деплой на Ubuntu
+
+```bash
+sudo DOMAIN=dossier.example.com bash deploy/install-ubuntu.sh
+sudo certbot --nginx -d dossier.example.com
+```
+
+Подробности и ручные шаги — [documenti/10-deployment-ubuntu.md](documenti/10-deployment-ubuntu.md).
 
 ### Скриншоты
 

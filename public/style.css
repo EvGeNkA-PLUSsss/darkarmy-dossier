@@ -984,15 +984,16 @@ input, textarea, select, button { font-family: inherit; color: inherit; }
   padding: 2px 4px; border-radius: 4px; flex-shrink: 0;
 }
 .task-item .task-del:hover { color: var(--danger-fg); background: rgba(239,68,68,.12); }
-.add-task-form { display: flex; gap: 6px; }
+.add-task-form { display: flex; gap: 6px; align-items: center; }
 .add-task-form input {
-  flex: 1; background: var(--code-bg); border: 1px solid var(--border);
+  flex: 1; min-width: 0; height: 34px; background: var(--code-bg); border: 1px solid var(--border);
   border-radius: 6px; padding: 7px 10px; font-size: 13px; color: var(--text); outline: none;
 }
 .add-task-form input:focus { border-color: var(--accent); }
 .add-task-form button {
+  flex: 0 0 34px; width: 34px; height: 34px; padding: 0;
   background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
-  width: 32px; height: 32px; border-radius: 6px; cursor: pointer;
+  border-radius: 6px; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .add-task-form button:hover { background: var(--accent); color: #fff; border-color: var(--accent); }

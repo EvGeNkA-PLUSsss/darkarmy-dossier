@@ -395,8 +395,10 @@ function renderBugs(items) {
       </div>
       ${shot}
       <div class="bug-actions">
+        <button type="button" data-edit="${escapeHtml(it.id)}">${icon('edit','sm')} Редактировать</button>
         <button type="button" class="danger-btn" data-del="${escapeHtml(it.id)}">${icon('trash','sm')} Исправлено / удалить</button>
       </div>`;
+    card.querySelector('[data-edit]').onclick = () => openBugEditor(card, it);
     card.querySelector('[data-del]').onclick = async () => {
       if (!await _confirm('Удалить баг из списка? Скриншот тоже будет удалён.')) return;
       const r = await fetch('/api/bugs/' + encodeURIComponent(it.id), { method: 'DELETE' });
@@ -405,6 +407,45 @@ function renderBugs(items) {
     };
     box.appendChild(card);
   }
+}
+
+function openBugEditor(card, it) {
+  card.innerHTML = `
+    <div class="bug-card-body">
+      <div class="bug-card-head"><b>${escapeHtml(it.user || '—')}</b><span class="bug-page">${escapeHtml(it.page || '')}</span></div>
+      <textarea class="bug-edit-text" rows="5">${escapeHtml(it.description || '')}</textarea>
+      <label class="hint">Скриншот: <input type="file" class="bug-edit-shot" accept="image/png,image/jpeg,image/webp"></label>
+    </div>
+    <div class="bug-actions">
+      <button type="button" data-bug-cancel>Отмена</button>
+      <button type="button" class="primary" data-bug-save>Сохранить</button>
+    </div>`;
+  card.querySelector('[data-bug-cancel]').onclick = () => loadBugs();
+  card.querySelector('[data-bug-save]').onclick = async () => {
+    const description = card.querySelector('.bug-edit-text').value.trim();
+    if (!description) return _alert('Описание не может быть пустым');
+    const file = card.querySelector('.bug-edit-shot').files[0];
+    let screenshot = null;
+    if (file) {
+      if (file.size > 3 * 1024 * 1024) return _alert('Скриншот больше 3 МБ');
+      screenshot = await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = () => reject(new Error('read'));
+        fr.readAsDataURL(file);
+      }).catch(() => null);
+      if (!screenshot) return _alert('Не удалось прочитать скриншот');
+    }
+    const r = await fetch('/api/bugs/' + encodeURIComponent(it.id), {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description, page: it.page, screenshot }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      return _alert('Не удалось сохранить: ' + (d.error || r.statusText));
+    }
+    await loadBugs();
+  };
 }
 
 /* ============ Пользователи ============ */
@@ -822,9 +863,13 @@ function renderTelemetryUsers() {
     const el = document.createElement('div');
     el.className = 'telemetry-user' + (u.username === telemetrySelected ? ' active' : '');
     const lastSeen = u.lastSeen ? new Date(u.lastSeen).toLocaleString('ru-RU') : '—';
+    const dev = u.lastClient
+      ? `<div class="telemetry-user-device">${icon('monitor','sm')} ${escapeHtml(u.lastClient.screen || '?')} · ${escapeHtml(u.lastClient.platform || '?')} · ${escapeHtml(u.lastClient.ip || '')}</div>`
+      : '';
     el.innerHTML = `
       <div class="telemetry-user-name">${icon('user','sm')} ${escapeHtml(u.username)}</div>
       <div class="telemetry-user-meta">${u.events} событий · последний: ${lastSeen}</div>
+      ${dev}
     `;
     el.onclick = () => { telemetrySelected = u.username; renderTelemetryUsers(); loadTelemetryEvents(u.username); };
     box.appendChild(el);
@@ -883,7 +928,19 @@ function renderTelemetryEvents(t) {
     else if (e.type === 'register') body = ic('user-plus') + ' Регистрация' + (e.invite ? ` (код ${escapeHtml(e.invite)})` : '');
     else if (e.type === 'password-change') body = ic('key') + ' Смена пароля';
     else if (e.type === 'self-delete') body = ic('x-circle') + ' Удалил аккаунт';
-    else if (e.type === 'client-info') body = ic('monitor') + ` ${escapeHtml(e.screen || '?')} · ${escapeHtml(e.platform || '?')} · ${escapeHtml(e.tz || '?')} · ${escapeHtml(e.lang || '?')}`;
+    else if (e.type === 'client-info') {
+      const extra = [];
+      if (e.viewport) extra.push('экран ' + e.viewport);
+      if (e.lang || e.langs) extra.push('язык ' + (e.langs || e.lang));
+      if (e.cores) extra.push('CPU ' + e.cores);
+      if (e.memory) extra.push('RAM ' + e.memory + ' ГБ');
+      if (e.touch) extra.push('touch ' + e.touch);
+      if (e.connType) extra.push('сеть ' + e.connType + (e.downlink ? ' ' + e.downlink + ' Мбит/с' : ''));
+      if (e.colorScheme) extra.push('тема ' + e.colorScheme);
+      if (e.pwa) extra.push(e.pwa);
+      body = ic('monitor') + ` ${escapeHtml(e.screen || '?')} · ${escapeHtml(e.platform || '?')} · ${escapeHtml(e.tz || '?')}` +
+        (extra.length ? `<div class="telemetry-extra">${escapeHtml(extra.join(' · '))}</div>` : '');
+    }
     else body = escapeHtml(e.type);
     const ip = e.ip ? `<span class="telemetry-ip">IP: ${escapeHtml(e.ip)}</span>` : '';
     const ua = e.ua ? `<div class="telemetry-ua">${escapeHtml(e.ua)}</div>` : '';

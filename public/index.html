@@ -6,6 +6,11 @@
 <meta name="theme-color" content="#0a0b0f">
 <title>DarkArmy Dossier</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5 L19.5 5.5 V11.5 C19.5 16.5 16.2 20.2 12 21.5 C7.8 20.2 4.5 16.5 4.5 11.5 V5.5 Z' stroke='%23e63946' stroke-width='1.6' fill='none'/%3E%3Cpath d='M9 11.7 L11 13.7 L15.2 9.5' stroke='%23e63946' stroke-width='1.8' fill='none'/%3E%3C/svg%3E">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Dossier">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="design.css">
 <!-- Библиотеки вендорены локально (public/vendor): нет CDN-зависимости,
@@ -50,6 +55,7 @@
 <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
 <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></symbol>
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-file-plus" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7M12 12v6M9 15h6"/></symbol>
 <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></symbol>
 <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
 <symbol id="i-check-circle" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></symbol>
@@ -77,6 +83,9 @@
 <symbol id="i-gavel" viewBox="0 0 24 24"><path d="M14 4l6 6-3 3-6-6zM3 21l9-9M9 5l-6 6 3 3 6-6zM21 15l-4 4"/></symbol>
 <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></symbol>
 <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+<symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></symbol>
+<symbol id="i-help-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4"/><line x1="12" y1="17" x2="12" y2="17.01"/></symbol>
+<symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></symbol>
 <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></symbol>
 <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
 <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></symbol>
@@ -126,6 +135,7 @@
     <button id="chatBtn" title="Чат"><svg class="ico"><use href="#i-message"/></svg><span id="chatBadge" class="badge-dot" style="display:none">0</span></button>
     <button id="inboxBtn" style="display:none" title="Входящие"><svg class="ico"><use href="#i-clipboard"/></svg><span id="inboxBadge" class="badge-dot" style="display:none">0</span></button>
     <button id="notifBtn" title="Уведомления" aria-label="Уведомления"><svg class="ico"><use href="#i-bell"/></svg><span id="notifBadge" class="badge-dot" style="display:none">0</span></button>
+    <button id="helpBtn" title="Помощь и горячие клавиши (Ctrl+/)"><svg class="ico"><use href="#i-help-circle"/></svg></button>
     <button id="profileBtn" title="Профиль"><svg class="ico"><use href="#i-user"/></svg></button>
     <a href="/admin.html" id="adminLink" style="display:none" title="Админ-панель"><svg class="ico"><use href="#i-settings"/></svg></a>
     <button id="logoutBtn" title="Выйти"><svg class="ico"><use href="#i-logout"/></svg></button>
@@ -686,6 +696,61 @@
     <svg class="ico xl"><use href="#i-x"/></svg>
   </button>
   <img id="lightboxImg" src="" alt="">
+</div>
+
+<div id="helpModal" class="modal" style="display:none">
+  <div class="modal-inner help-modal-inner">
+    <div class="modal-head">
+      <span><svg class="ico sm"><use href="#i-help-circle"/></svg> Помощь · первые шаги</span>
+      <button type="button" data-close title="Закрыть"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="help-body">
+      <div class="help-grid">
+        <button type="button" class="help-action" data-help-action="new-file"><svg class="ico"><use href="#i-file-plus"/></svg><b>Создать файл</b><span>Документ, заметка, код</span></button>
+        <button type="button" class="help-action" data-help-action="new-folder"><svg class="ico"><use href="#i-folder-plus"/></svg><b>Создать папку</b><span>Структура проекта</span></button>
+        <button type="button" class="help-action" data-help-action="darcus"><svg class="ico"><use href="#i-star"/></svg><b>Спросить Darcus</b><span>ИИ по файлам проекта</span></button>
+        <button type="button" class="help-action" data-help-action="upload"><svg class="ico"><use href="#i-upload"/></svg><b>Загрузить файлы</b><span>Перетащите или выберите</span></button>
+      </div>
+      <h4><svg class="ico sm"><use href="#i-keyboard"/></svg> Горячие клавиши</h4>
+      <div class="shortcut-list">
+        <div><kbd>Ctrl</kbd> + <kbd>S</kbd><span>Сохранить файл / редактор</span></div>
+        <div><kbd>Ctrl</kbd> + <kbd>K</kbd><span>Поиск по проекту</span></div>
+        <div><kbd>Ctrl</kbd> + <kbd>N</kbd><span>Новый файл</span></div>
+        <div><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd><span>Новая папка</span></div>
+        <div><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd><span>Поиск по всем проектам</span></div>
+        <div><kbd>Ctrl</kbd> + <kbd>P</kbd><span>Печать текущего файла</span></div>
+        <div><kbd>Ctrl</kbd> + <kbd>/</kbd><span>Эта справка</span></div>
+        <div><kbd>Esc</kbd><span>Закрыть окно / отменить</span></div>
+      </div>
+      <div class="help-foot">
+        <button type="button" id="installAppBtn" style="display:none">Установить приложение</button>
+        <button type="button" id="helpOnboardingBtn">Показать первые шаги</button>
+        <button type="button" class="primary" data-close>Понятно</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="onboardingModal" class="modal" style="display:none">
+  <div class="modal-inner onboarding-inner">
+    <div class="modal-head">
+      <span><svg class="ico sm"><use href="#i-sparkles"/></svg> Добро пожаловать в DarkArmy Dossier</span>
+      <button type="button" data-close title="Закрыть"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="onboarding-body">
+      <p class="onboarding-lead">Три шага, чтобы начать — всё остальное можно сделать из интерфейса.</p>
+      <ol class="onboarding-steps">
+        <li><b>Создайте проект и файл.</b> Слева — дерево файлов, кнопки «Создать» и «Папка». Файлы можно перетаскивать.</li>
+        <li><b>Спросите Darcus.</b> ИИ видит файлы проекта, создаёт документы и умеет работать с изображениями.</li>
+        <li><b>Работайте вместе.</b> Откройте один файл с нескольких устройств — правки синхронизируются вживую.</li>
+      </ol>
+      <div class="onboarding-actions">
+        <button type="button" class="primary" id="onboardingStartBtn">Начать работу</button>
+        <button type="button" id="onboardingShortcutsBtn">Горячие клавиши</button>
+        <button type="button" id="onboardingNeverBtn" class="muted">Больше не показывать</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="js/ui-dialog.js"></script>

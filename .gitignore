@@ -1,5 +1,7 @@
 # Зависимости
 node_modules/
+desktop/electron/node_modules/
+desktop/electron/dist/
 
 # Секреты и локальная конфигурация
 .env

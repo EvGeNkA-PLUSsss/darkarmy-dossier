@@ -305,6 +305,8 @@ function normalizeTask(t, index) {
   t.done = t.status === 'done';
   if (!Number.isFinite(t.order)) t.order = index;
   if (t.assignee === undefined) t.assignee = null;
+  if (!['low', 'normal', 'high'].includes(t.priority)) t.priority = 'normal';
+  if (t.due === undefined) t.due = null;
   return t;
 }
 
@@ -818,10 +820,16 @@ app.patch('/api/account/theme', requireAuth, (req, res) => {
 app.post('/api/telemetry/client', requireAuth, (req, res) => {
   const b = req.body || {};
   const f = v => String(v == null ? '' : v).slice(0, 200);
+  const n = v => Number(v) || 0;
   telemetryAppend(req.user.username, {
     type: 'client-info',
-    screen: f(b.screen), viewport: f(b.viewport), lang: f(b.lang),
-    tz: f(b.tz), platform: f(b.platform), referrer: f(b.referrer),
+    screen: f(b.screen), viewport: f(b.viewport), lang: f(b.lang), langs: f(b.langs),
+    tz: f(b.tz), tzOffset: n(b.tzOffset),
+    platform: f(b.platform), referrer: f(b.referrer),
+    uaClient: f(b.ua), cores: n(b.cores), memory: n(b.memory), touch: n(b.touch),
+    online: b.online !== false, connType: f(b.connType), downlink: n(b.downlink), rtt: n(b.rtt),
+    colorScheme: f(b.colorScheme), reducedMotion: !!b.reducedMotion, dnt: f(b.dnt),
+    cookies: b.cookies !== false, pwa: f(b.pwa),
     ip: req.ip || '-', ua: String(req.headers['user-agent'] || '-').slice(0, 300),
   });
   res.json({ ok: true });
@@ -2599,6 +2607,8 @@ app.post('/api/projects/:projectId/tasks', requireAuth, projectGuard('read', 'pa
     id: crypto.randomUUID(), text, done: status === 'done', status,
     order: maxOrder + 1,
     assignee: typeof req.body?.assignee === 'string' ? req.body.assignee.slice(0, 64) : null,
+    priority: ['low', 'normal', 'high'].includes(req.body?.priority) ? req.body.priority : 'normal',
+    due: typeof req.body?.due === 'string' ? req.body.due.slice(0, 10) : null,
     createdBy: req.user.username,
     createdAt: new Date().toISOString(),
     doneBy: status === 'done' ? req.user.username : null,
@@ -2641,6 +2651,10 @@ app.patch('/api/projects/:projectId/tasks/:taskId', requireAuth, projectGuard('r
   if (Number.isFinite(body.order)) task.order = Math.max(0, Math.floor(body.order));
   if (body.assignee !== undefined)
     task.assignee = body.assignee ? String(body.assignee).slice(0, 64) : null;
+  if (body.priority !== undefined && ['low', 'normal', 'high'].includes(body.priority))
+    task.priority = body.priority;
+  if (body.due !== undefined)
+    task.due = body.due ? String(body.due).slice(0, 10) : null;
   saveProjectChats(data);
   const recipients = req.project.members.map(m => m.username);
   sseSendTo([...new Set(recipients)], 'project-task', { projectId: req.project.id, task, op: 'update' });

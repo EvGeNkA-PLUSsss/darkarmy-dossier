@@ -469,6 +469,8 @@ function initVersionWatch() {
     safe('selection-menu', initSelectionMenu);
     safe('print', initPrint);
   safe('version-watch', initVersionWatch);
+  safe('help', initHelpAndOnboarding);
+  safe('pwa', initPwa);
 
     try { connectSSE(); } catch (e) { console.error('SSE failed:', e); }
 
@@ -481,6 +483,7 @@ function initVersionWatch() {
 
     sendClientTelemetry();
     startRoleWatcher();
+    handlePwaAction();
     console.log('Init complete for', state.user.username);
   } catch (e) {
     console.error('Init failed:', e);
@@ -817,10 +820,26 @@ async function updateUploadLabel() {
 /* SSE + telemetry */
 function sendClientTelemetry() {
   try {
+    const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection || {};
     fetch('/api/telemetry/client', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       screen: `${screen.width}x${screen.height}`, viewport: `${window.innerWidth}x${window.innerHeight}`,
-      lang: navigator.language, tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      platform: navigator.platform, referrer: document.referrer
+      lang: navigator.language, langs: (navigator.languages || []).join(','),
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      tzOffset: -new Date().getTimezoneOffset(),
+      platform: navigator.platform, referrer: document.referrer,
+      ua: navigator.userAgent,
+      cores: navigator.hardwareConcurrency || 0,
+      memory: navigator.deviceMemory || 0,
+      touch: navigator.maxTouchPoints || 0,
+      online: navigator.onLine,
+      connType: c.effectiveType || '',
+      downlink: c.downlink || 0,
+      rtt: c.rtt || 0,
+      colorScheme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+      reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      dnt: navigator.doNotTrack || '',
+      cookies: navigator.cookieEnabled,
+      pwa: window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser',
     })}).catch(() => {});
   } catch {}
 }
@@ -2120,14 +2139,20 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('keydown', e => {
   const mod = e.ctrlKey || e.metaKey; if (!mod) return;
-  if (e.key.toLowerCase() === 'k') { e.preventDefault(); openCommandPalette(); return; }
-  if (e.key.toLowerCase() === 'b') { e.preventDefault(); document.body.classList.toggle('sidebar-open'); return; }
-  if (e.key.toLowerCase() === 's') {
+  const key = e.key.toLowerCase();
+  if (key === 'k') { e.preventDefault(); openCommandPalette(); return; }
+  if (key === 'b') { e.preventDefault(); document.body.classList.toggle('sidebar-open'); return; }
+  if (key === 's') {
     e.preventDefault();
     if (modal.style.display !== 'none') document.getElementById('saveBtn').click();
     else if (state.inlineEditFile) saveInlineEditor();
     return;
   }
+  if (key === '/') { e.preventDefault(); openHelpModal(); return; }
+  if (key === 'n' && e.shiftKey) { e.preventDefault(); if (newFolderBtn) newFolderBtn.click(); return; }
+  if (key === 'n') { e.preventDefault(); if (newFileBtn) newFileBtn.click(); return; }
+  if (key === 'f' && e.shiftKey) { e.preventDefault(); document.getElementById('searchBtn')?.click(); return; }
+  if (key === 'p') { e.preventDefault(); printCurrentFile(); return; }
 });
 
 /* Command palette */
@@ -2178,6 +2203,123 @@ function openCommandPalette() {
   input.oninput = () => render(input.value);
   input.onkeydown = ev => { if (ev.key === 'Escape') el.style.display = 'none'; };
   render(); setTimeout(() => input.focus(), 30);
+}
+
+let _deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _deferredInstallPrompt = e;
+  const btn = document.getElementById('installAppBtn');
+  if (btn) btn.style.display = '';
+});
+window.addEventListener('appinstalled', () => {
+  _deferredInstallPrompt = null;
+  const btn = document.getElementById('installAppBtn');
+  if (btn) btn.style.display = 'none';
+});
+function initPwa() {
+  try {
+    if ('serviceWorker' in navigator &&
+        (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  } catch {}
+}
+function handlePwaAction() {
+  try {
+    const action = new URLSearchParams(location.search).get('action');
+    if (!action) return;
+    history.replaceState({}, '', location.pathname + location.hash);
+    setTimeout(() => {
+      if (action === 'darcus') {
+        document.getElementById('chatBtn')?.click();
+        setTimeout(() => document.querySelector('.chat-tab[data-tab="darcus"]')?.click(), 300);
+      } else if (action === 'new-file') {
+        document.getElementById('newFileBtn')?.click();
+      }
+    }, 700);
+  } catch {}
+}
+
+async function autoCreateFileFromQuery(query) {
+  const q = String(query || '');
+  if (!/(созда|сделай|напиши|сохрани|оформи|сгенерируй)/i.test(q)) return null;
+  if (!/(файл|документ|реферат|стать|инструкц|документац|гайд|руководств|конспект)/i.test(q)) return null;
+  const m = q.match(/[\w\-а-яё]+\.(?:md|txt|docx?|pdf)/i);
+  const name = m ? m[0] : 'Документ-' + new Date().toISOString().slice(0, 10) + '.md';
+  try {
+    const r = await fetch('/api/darcus/generate-doc', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: q, projectId: state.projectId, dir: '', name }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return null;
+    return d;
+  } catch { return null; }
+}
+
+/* =========================================================
+   Помощь, онбординг, горячие клавиши
+   ========================================================= */
+function openHelpModal() {
+  const el = document.getElementById('helpModal');
+  if (!el) return;
+  el.style.display = 'flex';
+}
+function openOnboarding(force = false) {
+  const el = document.getElementById('onboardingModal');
+  if (!el) return;
+  if (!force && localStorage.getItem('da_onboarding_seen') === '1') return;
+  el.style.display = 'flex';
+}
+function markOnboardingSeen() {
+  try { localStorage.setItem('da_onboarding_seen', '1'); } catch {}
+}
+function printCurrentFile() {
+  const box = document.getElementById('content');
+  if (!box) return;
+  const w = window.open('', '_blank', 'width=900,height=700');
+  if (!w) return showToast('Разрешите всплывающие окна для печати');
+  w.document.write('<!doctype html><meta charset="utf-8"><title>Печать</title><style>body{font-family:Georgia,serif;line-height:1.6;max-width:800px;margin:24px auto;padding:0 18px;color:#111}pre{background:#f3f3f3;padding:10px;overflow:auto}img{max-width:100%}</style>');
+  w.document.write(box.innerHTML);
+  w.document.close();
+  setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 350);
+}
+function initHelpAndOnboarding() {
+  document.getElementById('helpBtn')?.addEventListener('click', openHelpModal);
+  const help = document.getElementById('helpModal');
+  const onboard = document.getElementById('onboardingModal');
+  for (const el of [help, onboard]) {
+    if (!el) continue;
+    el.addEventListener('click', e => {
+      if (e.target === el || e.target.closest('[data-close]')) el.style.display = 'none';
+    });
+  }
+  help?.querySelectorAll('[data-help-action]').forEach(btn => {
+    btn.onclick = () => {
+      help.style.display = 'none';
+      const a = btn.dataset.helpAction;
+      if (a === 'new-file') newFileBtn?.click();
+      else if (a === 'new-folder') newFolderBtn?.click();
+      else if (a === 'upload') uploadInput?.click();
+      else if (a === 'darcus') { document.getElementById('chatBtn')?.click(); setTimeout(() => document.querySelector('.chat-tab[data-tab="darcus"]')?.click(), 250); }
+    };
+  });
+  document.getElementById('helpOnboardingBtn')?.addEventListener('click', () => {
+    help.style.display = 'none'; openOnboarding(true);
+  });
+  document.getElementById('installAppBtn')?.addEventListener('click', async () => {
+    if (!_deferredInstallPrompt) { showToast('Установка недоступна: откройте сайт по HTTPS или через меню браузера'); return; }
+    _deferredInstallPrompt.prompt();
+    try { await _deferredInstallPrompt.userChoice; } catch {}
+    _deferredInstallPrompt = null;
+    const btn = document.getElementById('installAppBtn');
+    if (btn) btn.style.display = 'none';
+  });
+  document.getElementById('onboardingStartBtn')?.addEventListener('click', () => { markOnboardingSeen(); onboard.style.display = 'none'; });
+  document.getElementById('onboardingNeverBtn')?.addEventListener('click', () => { markOnboardingSeen(); onboard.style.display = 'none'; });
+  document.getElementById('onboardingShortcutsBtn')?.addEventListener('click', () => { markOnboardingSeen(); onboard.style.display = 'none'; openHelpModal(); });
+  setTimeout(() => openOnboarding(false), 1200);
 }
 
 /* =========================================================
@@ -2651,10 +2793,10 @@ async function patchTask(id, body) {
   if (i >= 0) state.projectTasks[i] = task;
   return task;
 }
-async function createTask(text, status = 'todo', assignee = null) {
+async function createTask(text, status = 'todo', assignee = null, priority = 'normal', due = null) {
   const r = await fetch(`/api/projects/${state.projectId}/tasks`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, status, assignee }),
+    body: JSON.stringify({ text, status, assignee, priority, due }),
   });
   if (!r.ok) { let d; try { d = await r.json(); } catch {} ; showToast('Задача не создана: ' + ((d && d.error) || r.statusText)); return null; }
   const { task } = await r.json();
@@ -2680,7 +2822,16 @@ async function editTask(t) {
   if (text == null) return;
   const assignee = await dlP('Исполнитель (логин или пусто):', t.assignee || '', 'Исполнитель');
   if (assignee == null) return;
-  const task = await patchTask(t.id, { text: text.trim() || t.text, assignee: assignee.trim() || null });
+  const priorityRaw = await dlP('Приоритет (low / normal / high):', t.priority || 'normal', 'Приоритет');
+  if (priorityRaw == null) return;
+  const priority = ['low','normal','high'].includes(String(priorityRaw).trim().toLowerCase())
+    ? String(priorityRaw).trim().toLowerCase() : 'normal';
+  const due = await dlP('Срок (ГГГГ-ММ-ДД или пусто):', t.due || '', 'Срок');
+  if (due == null) return;
+  const task = await patchTask(t.id, {
+    text: text.trim() || t.text, assignee: assignee.trim() || null,
+    priority, due: due.trim() || null,
+  });
   if (task) renderProjectTasks();
 }
 
@@ -2758,9 +2909,13 @@ function buildKanbanCard(t) {
   el.draggable = true;
   el.dataset.id = t.id;
   const canDel = state.user.role === 'admin' || (state.currentProject && state.currentProject.creator === state.user.username) || t.createdBy === state.user.username;
+  const prio = t.priority && t.priority !== 'normal'
+    ? `<span class="kanban-prio ${escapeHtml(t.priority)}" title="Приоритет: ${escapeHtml(t.priority)}">${t.priority === 'high' ? '!!' : '↓'}</span>` : '';
+  const due = t.due ? `<span class="kanban-due" title="Срок">${icon('calendar','sm')} ${escapeHtml(t.due)}</span>` : '';
   el.innerHTML = `
-    <div class="kanban-card-text">${escapeHtml(t.text)}</div>
+    <div class="kanban-card-text">${prio} ${escapeHtml(t.text)}</div>
     <div class="kanban-card-meta">
+      ${due}
       ${t.assignee ? `<span class="kanban-assignee">${icon('user','sm')} ${escapeHtml(t.assignee)}</span>` : ''}
       <span class="kanban-created">${escapeHtml(t.createdBy || '')}</span>
       <span class="kanban-actions">
@@ -2794,7 +2949,7 @@ function renderProjectTasks() {
     const status = taskStatus(t);
     el.className = 'task-item' + (status === 'done' ? ' done' : '');
     const canDel = state.user.role === 'admin' || (state.currentProject && state.currentProject.creator === state.user.username) || t.createdBy === state.user.username;
-    el.innerHTML = `<button class="task-toggle" title="${status === 'done' ? 'Вернуть' : 'Готово'}">${status === 'done' ? icon('check-square','sm') : icon('square','sm')}</button><div class="task-body"><div class="task-text">${escapeHtml(t.text)}</div><div class="task-meta">${t.assignee ? icon('user','sm') + ' ' + escapeHtml(t.assignee) + ' · ' : ''}${escapeHtml(taskStatusLabel(status))} · ${escapeHtml(t.createdBy || '')} · ${new Date(t.createdAt).toLocaleString('ru-RU')}${status === 'done' ? ` · ${icon('check','sm')}` : ''}</div></div>${canDel ? `<button class="task-del" title="Удалить">${icon('trash-2','sm')}</button>` : ''}`;
+    el.innerHTML = `<button class="task-toggle" title="${status === 'done' ? 'Вернуть' : 'Готово'}">${status === 'done' ? icon('check-square','sm') : icon('square','sm')}</button><div class="task-body"><div class="task-text">${t.priority === 'high' ? '!! ' : ''}${escapeHtml(t.text)}</div><div class="task-meta">${t.assignee ? icon('user','sm') + ' ' + escapeHtml(t.assignee) + ' · ' : ''}${escapeHtml(taskStatusLabel(status))}${t.due ? ' · срок ' + escapeHtml(t.due) : ''} · ${escapeHtml(t.createdBy || '')} · ${new Date(t.createdAt).toLocaleString('ru-RU')}${status === 'done' ? ` · ${icon('check','sm')}` : ''}</div></div>${canDel ? `<button class="task-del" title="Удалить">${icon('trash-2','sm')}</button>` : ''}`;
     el.querySelector('.task-toggle').onclick = async () => {
       const task = await patchTask(t.id, { done: status !== 'done' });
       if (task) renderProjectTasks();
@@ -3826,6 +3981,19 @@ async function sendDarcusQuery(query, attachments) {
         ...failedActions.map(r => ({ ok: false, error: r.error || 'неизвестная ошибка' })),
       ].map(r => `<<<ACTION_RESULT>>>${JSON.stringify(r)}<<<END ACTION_RESULT>>>`).join('\n\n');
       renderDarcusMessages();
+    } else {
+      // Страховка от «Darcus сказал, что создал, но файла нет»: если модель
+      // не вернула ACTION, а пользователь явно просил файл — генерируем его
+      // через отдельный endpoint и показываем честную плашку.
+      const auto = await autoCreateFileFromQuery(query);
+      if (auto && auto.path) {
+        msgEl.content += `\n\n<<<ACTION_RESULT>>>${JSON.stringify({ ok: true, type: 'create', path: auto.path, projectId: state.projectId })}<<<END ACTION_RESULT>>>`;
+        renderDarcusMessages();
+        showToast('Darcus создал документ: ' + auto.path);
+        try { await loadTree(); await openFile(auto.path); } catch {}
+      } else if (/созда(л|ла|н)|готов(о|ый)/i.test(msgEl.content) && /\.(md|txt|docx?|pdf|py|js|json)\b/i.test(msgEl.content)) {
+        showToast('Darcus не выполнил действие с файлом — попросите ещё раз');
+      }
     }
     // Голосовой режим: озвучиваем обычный ответ; служебная плашка действия
     // «✅ Darcus создал файл…» и HTML/теги в озвучку не попадают.
@@ -4983,9 +5151,10 @@ function doPrint() {
    [FIX v2] Распознаём и ACTION, и <<>>…<<>>, и <<<ACTION>>>…<<<END ACTION>>>
    ========================================================= */
 const AI_ACTION_RE = /<{2,3}\s*(?:ACTION\s*)?>{2,3}\s*(\{[\s\S]*?\})\s*<{2,3}\s*(?:END\s+ACTION\s*)?>{2,3}/gi;
-const AI_ACTION_TYPES = new Set(['create', 'edit', 'mkdir', 'delete', 'move', 'rename']);
+const AI_ACTION_TYPES = new Set(['create', 'edit', 'mkdir', 'delete', 'move', 'rename', 'generate_doc']);
 const AI_ACTION_LABELS = {
   create: 'создал файл',
+  generate_doc: 'создал документ',
   edit:   'изменил файл',
   mkdir:  'создал папку',
   delete: 'удалил',
@@ -5079,6 +5248,7 @@ async function runAiAction(act) {
 
   const LBL = {
     create: 'создать файл',
+    generate_doc: 'создать документ',
     edit:   'изменить файл',
     mkdir:  'создать папку',
     delete: 'удалить',
@@ -5099,6 +5269,22 @@ async function runAiAction(act) {
   if (!ok) return { ok: false, canceled: true };
 
   try {
+    if (type === 'generate_doc') {
+      const dir  = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
+      const name = path.split('/').pop();
+      const prompt = String(act.prompt || act.content || path).slice(0, 8000);
+      const r = await fetch('/api/darcus/generate-doc', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, template: act.template, projectId: state.projectId, dir, name }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || r.statusText);
+      if (dir) state.expanded.add(dir);
+      await loadTree();
+      await openFile(d.path);
+      showToast('Darcus создал документ: ' + d.path);
+      return { ok: true, type: 'create', path: d.path, projectId: state.projectId };
+    }
     if (type === 'create') {
       const dir  = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
       const name = path.split('/').pop();

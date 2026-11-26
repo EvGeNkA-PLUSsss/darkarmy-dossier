@@ -1306,3 +1306,35 @@ form label { font-size: var(--fs-3); color: var(--text-dim); }
   outline-offset: -4px;
   background: var(--accent-soft);
 }
+
+/* Помощь, онбординг, доска задач */
+.help-modal-inner, .onboarding-inner { max-width: 720px; width: calc(100vw - 32px); }
+.help-body { padding: 4px 2px 10px; }
+.help-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 8px 0 18px; }
+.help-action { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-2); color: var(--text); cursor: pointer; transition: border-color .15s, transform .15s; }
+.help-action:hover { border-color: var(--accent); transform: translateY(-1px); }
+.help-action .ico { color: var(--accent); }
+.help-action b { font-size: var(--fs-2); }
+.help-action span { font-size: var(--fs-1); color: var(--text-dim); }
+.help-body h4 { display: flex; align-items: center; gap: 6px; margin: 6px 0 10px; font-size: var(--fs-2); color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+.shortcut-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 18px; }
+.shortcut-list > div { display: flex; align-items: center; gap: 6px; font-size: var(--fs-2); color: var(--text-dim); }
+.shortcut-list span { margin-left: auto; text-align: right; }
+kbd { background: var(--bg-3, #20232c); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; font-size: 11px; color: var(--text); font-family: inherit; }
+.help-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.onboarding-body { padding: 4px 2px 8px; }
+.onboarding-lead { color: var(--text-dim); margin: 0 0 12px; }
+.onboarding-steps { margin: 0 0 18px; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; line-height: 1.55; }
+.onboarding-steps b { color: var(--text); }
+.onboarding-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.kanban-prio { display: inline-block; font-weight: 800; color: #fbbf24; }
+.kanban-prio.low { color: #93c5fd; font-weight: 600; }
+.kanban-prio.high { color: #f87171; }
+.kanban-due { display: inline-flex; align-items: center; gap: 3px; color: var(--text-dim); font-size: 11px; }
+.telemetry-extra { margin-top: 4px; color: var(--text-dim); font-size: var(--fs-1); }
+.telemetry-user-device { display: flex; align-items: center; gap: 4px; margin-top: 4px; color: var(--text-dim); font-size: var(--fs-1); }
+.bug-edit-text { width: 100%; margin-top: 8px; }
+@media (max-width: 700px) {
+  .help-grid, .shortcut-list { grid-template-columns: 1fr; }
+  .shortcut-list span { margin-left: 8px; }
+}
