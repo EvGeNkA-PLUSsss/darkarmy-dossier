@@ -195,9 +195,13 @@
     <label>Лимит для участников (МБ):
       <input type="number" name="uploadLimitMB" min="1" max="100000" required>
     </label>
+    <label>Telegram для доступа и оплаты AI:
+      <input type="text" name="aiContact" maxlength="80" placeholder="@AgroDeveloper">
+    </label>
     <button type="submit" class="primary">Сохранить</button>
   </form>
-  <p class="hint">Для администраторов лимит не применяется.</p>
+  <p class="hint">Для администраторов лимит не применяется. Telegram можно указать как @username
+    или ссылкой https://t.me/username — она подставится на странице входа и по адресу <code>/contact</code>.</p>
 
   <h2 style="margin-top:24px">Общий чат</h2>
   <form id="chatSettingsForm" class="inline-form">

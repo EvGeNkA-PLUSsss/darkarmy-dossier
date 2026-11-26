@@ -805,6 +805,8 @@ async function loadSettings() {
   const s = await r.json();
   const upForm = document.querySelector('#settingsForm [name="uploadLimitMB"]');
   if (upForm) upForm.value = s.uploadLimitMB ?? 50;
+  const contactForm = document.querySelector('#settingsForm [name="aiContact"]');
+  if (contactForm) contactForm.value = s.aiContact || '@AgroDeveloper';
   const chatForm = document.querySelector('#chatSettingsForm [name="generalChatMode"]');
   if (chatForm) chatForm.value = s.generalChatMode || 'everyone';
 }
@@ -812,9 +814,12 @@ async function saveSettings(e) {
   e.preventDefault();
   const val = parseInt(e.target.uploadLimitMB.value, 10);
   if (!Number.isFinite(val) || val < 1) return alert('Некорректный лимит');
+  const contact = (e.target.aiContact.value || '').trim();
+  if (contact && !/^(@?[A-Za-z0-9_]{4,64}|https?:\/\/(t\.me|telegram\.me)\/[A-Za-z0-9_]{4,64}\/?)$/.test(contact))
+    return alert('Telegram: укажите @username или https://t.me/username');
   const r = await fetch('/api/settings', {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uploadLimitMB: val })
+    body: JSON.stringify({ uploadLimitMB: val, aiContact: contact })
   });
   let data; try { data = await r.json(); } catch { data = {}; }
   if (!r.ok) return alert('Ошибка: ' + (data.error || r.statusText));

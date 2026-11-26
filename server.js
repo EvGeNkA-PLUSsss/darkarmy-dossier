@@ -164,10 +164,20 @@ function logChange(entry) {
 }
 
 /* ---------- Настройки ---------- */
+function normalizeAiContact(value) {
+  let v = String(value == null ? '' : value).trim();
+  if (!v) return '@AgroDeveloper';
+  v = v.replace(/^https?:\/\/(t\.me|telegram\.me)\//i, '').replace(/^@+/, '').replace(/\/+$/, '');
+  if (!/^[A-Za-z0-9_]{4,64}$/.test(v)) return '@AgroDeveloper';
+  return '@' + v;
+}
+function aiContactUrl(contact) {
+  return 'https://t.me/' + String(contact || '@AgroDeveloper').replace(/^@/, '');
+}
 function loadSettings() {
   const stored = loadDoc('settings', null);
   if (!stored) {
-    const def = { uploadLimitMB: cfg.limits.uploadDefaultMB, generalChatMode: 'everyone' };
+    const def = { uploadLimitMB: cfg.limits.uploadDefaultMB, generalChatMode: 'everyone', aiContact: '@AgroDeveloper' };
     try { saveDoc('settings', def); } catch {}
     return def;
   }
@@ -175,10 +185,11 @@ function loadSettings() {
     const s = { ...stored };
     if (!s.generalChatMode) s.generalChatMode = 'everyone';
     if (s.uploadLimitMB === undefined) s.uploadLimitMB = cfg.limits.uploadDefaultMB;
+    s.aiContact = normalizeAiContact(s.aiContact);
     return s;
   } catch (e) {
     logger.error({ err: e.message }, 'settings: используются значения по умолчанию');
-    return { uploadLimitMB: cfg.limits.uploadDefaultMB, generalChatMode: 'everyone' };
+    return { uploadLimitMB: cfg.limits.uploadDefaultMB, generalChatMode: 'everyone', aiContact: '@AgroDeveloper' };
   }
 }
 const saveSettings = d => saveDoc('settings', d);
@@ -1275,11 +1286,18 @@ app.post('/api/revert/:id', requireRole('admin'), (req, res) => {
 app.get('/api/settings', requireAuth, (req, res) => {
   const s = loadSettings();
   const limit = req.user.role === 'admin' ? null : s.uploadLimitMB;
-  res.json({ uploadLimitMB: limit, generalChatMode: s.generalChatMode || 'everyone' });
+  res.json({ uploadLimitMB: limit, generalChatMode: s.generalChatMode || 'everyone', aiContact: s.aiContact || '@AgroDeveloper' });
+});
+app.get('/api/public/contact', (req, res) => {
+  const contact = loadSettings().aiContact || '@AgroDeveloper';
+  res.json({ telegram: contact, url: aiContactUrl(contact) });
+});
+app.get('/contact', (req, res) => {
+  res.redirect(302, aiContactUrl(loadSettings().aiContact));
 });
 app.patch('/api/settings', requireRole('admin'), (req, res) => {
   const s = loadSettings();
-  const { uploadLimitMB, generalChatMode } = req.body || {};
+  const { uploadLimitMB, generalChatMode, aiContact } = req.body || {};
   if (uploadLimitMB !== undefined) {
     const mb = parseInt(uploadLimitMB, 10);
     if (!Number.isFinite(mb) || mb < 1 || mb > cfg.limits.uploadMaxMB)
@@ -1291,10 +1309,16 @@ app.patch('/api/settings', requireRole('admin'), (req, res) => {
       return res.status(400).json({ error: 'bad chat mode' });
     s.generalChatMode = generalChatMode;
   }
+  if (aiContact !== undefined) {
+    const raw = String(aiContact || '').trim();
+    if (raw && !/^(@?[A-Za-z0-9_]{4,64}|https?:\/\/(t\.me|telegram\.me)\/[A-Za-z0-9_]{4,64}\/?)$/.test(raw))
+      return res.status(400).json({ error: 'bad ai contact' });
+    s.aiContact = normalizeAiContact(raw);
+  }
   saveSettings(s);
   logChange({ user: req.user.username, action: 'settings-update',
-    details: `limit=${s.uploadLimitMB} chat=${s.generalChatMode}` });
-  res.json({ ok: true, settings: { uploadLimitMB: s.uploadLimitMB, generalChatMode: s.generalChatMode } });
+    details: `limit=${s.uploadLimitMB} chat=${s.generalChatMode} aiContact=${s.aiContact}` });
+  res.json({ ok: true, settings: { uploadLimitMB: s.uploadLimitMB, generalChatMode: s.generalChatMode, aiContact: s.aiContact } });
 });
 
 /* ---------- Статика ---------- */

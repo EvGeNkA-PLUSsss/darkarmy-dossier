@@ -1,4 +1,8 @@
 /* Вынесено из login.html ради строгого CSP (script-src 'self'). */
+fetch('/api/public/contact').then(r => r.json()).then(d => {
+      const a = document.getElementById('aiContactLink');
+      if (a) { a.href = d.url || '/contact'; a.textContent = 'Доступ и оплата AI: ' + (d.telegram || '@AgroDeveloper'); }
+    }).catch(() => {});
 try {
       const t = localStorage.getItem('theme');
       if (t) document.documentElement.setAttribute('data-theme', t);
