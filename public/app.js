@@ -1888,7 +1888,7 @@ async function renderFileContent() {
     document.querySelectorAll('#content .ocr-panel').forEach(x => x.remove());
   }
 }
-const EMPTY_VIEWER_HTML = `<p class="hint">Выберите файл слева</p>
+const EMPTY_VIEWER_HTML = `<p class="hint">Выберите файл или создайте новый</p>
 <div id="mobileEmptyActions" class="mobile-empty-actions">
   <button type="button" id="emptyFilesBtn" class="primary"><svg class="ico sm"><use href="#i-folder"/></svg> Файлы проекта</button>
   <button type="button" id="emptyCreateBtn"><svg class="ico sm"><use href="#i-plus"/></svg> Создать</button>
