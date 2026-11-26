@@ -1333,6 +1333,76 @@ kbd { background: var(--bg-3, #20232c); border: 1px solid var(--border); border-
 .kanban-due { display: inline-flex; align-items: center; gap: 3px; color: var(--text-dim); font-size: 11px; }
 .telemetry-extra { margin-top: 4px; color: var(--text-dim); font-size: var(--fs-1); }
 .telemetry-user-device { display: flex; align-items: center; gap: 4px; margin-top: 4px; color: var(--text-dim); font-size: var(--fs-1); }
+
+/* ===== Финальные мобильные переопределения (после всех правил) ===== */
+@media (max-width: 900px) {
+  .darcus-head {
+    flex-wrap: nowrap !important;
+    row-gap: 0 !important;
+    gap: 6px;
+    padding: 6px 8px;
+    overflow: hidden;
+  }
+  .darcus-head .darcus-sub { display: none !important; }
+  .darcus-head .darcus-brand {
+    flex: 0 1 auto;
+    max-width: 78px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+  .darcus-head .darcus-style-select {
+    flex: 0 1 92px !important;
+    width: 92px !important;
+    max-width: 92px !important;
+    min-width: 0 !important;
+  }
+  .darcus-head #darcusAutoApplyBtn,
+  .darcus-head #darcusVoiceAutoSendBtn {
+    flex: 0 0 30px !important;
+    width: 30px !important;
+    min-width: 30px !important;
+    height: 30px !important;
+  }
+  #darcusAutoApplyBtn { font-size: 0 !important; padding: 0 !important; border-radius: 50%; }
+  #darcusAutoApplyBtn::after { content: '⚡'; font-size: 14px; }
+  .help-modal-inner {
+    max-height: calc(100vh - 24px);
+    display: flex;
+    flex-direction: column;
+  }
+  .help-body { overflow: auto; }
+  .help-foot { flex-wrap: wrap; }
+  .help-foot button { flex: 0 0 auto; min-height: 34px; padding: 0 14px; white-space: nowrap; }
+}
+@media (max-width: 520px) {
+  #topbar .user-label { display: none !important; }
+  #topbar .user { gap: 2px; }
+  #bugBtn, #trashBtn, #themeBtn, #inboxBtn { display: none !important; }
+  #topbar .user > button,
+  #topbar .user > a {
+    width: 30px; height: 30px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  #topbar .user .ico { width: 17px; height: 17px; }
+  .brand-text { font-size: 13px; }
+}
+.help-foot button:not(.primary) {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--fs-2);
+}
+.help-foot button:not(.primary):hover { border-color: var(--accent); color: var(--accent); }
+.help-modal-inner, .onboarding-inner {
+  height: auto !important;
+  max-height: calc(100dvh - 32px) !important;
+  margin: auto !important;
+}
+#helpModal, #onboardingModal { align-items: center !important; justify-content: center !important; }
 .bug-edit-text { width: 100%; margin-top: 8px; }
 @media (max-width: 700px) {
   .help-grid, .shortcut-list { grid-template-columns: 1fr; }
