@@ -2016,7 +2016,10 @@ app.post('/api/upload', requireAuth, rateLimitUpload,
     const len = parseInt(req.headers['content-length'] || '0', 10);
     if (Number.isFinite(len) && len > 0) {
       const s = loadSettings();
-      const limitMB = req.user.role === 'admin' ? cfg.limits.uploadMaxMB : s.uploadLimitMB;
+      const subscribed = isSubscribed(req.user.username);
+      const limitMB = req.user.role === 'admin'
+        ? cfg.limits.uploadMaxMB
+        : (subscribed ? Math.max(s.uploadLimitMB, cfg.limits.uploadSubscribedMB) : s.uploadLimitMB);
       const hardCap = (limitMB + 1) * 1024 * 1024; // +1 МБ на multipart-обёртку
       if (len > hardCap)
         return res.status(413).json({ error: `Файл превышает лимит ${limitMB} МБ.` });
@@ -2037,11 +2040,15 @@ app.post('/api/upload', requireAuth, rateLimitUpload,
     if (!req.file) return res.status(400).json({ error: 'Файл не получен' });
     const cleanup = () => fs.unlink(req.file.path, () => {});
     const s = loadSettings();
-    const limitBytes = req.user.role === 'admin' ? Infinity : s.uploadLimitMB * 1024 * 1024;
+    const subscribed = isSubscribed(req.user.username);
+    const effectiveLimitMB = req.user.role === 'admin'
+      ? Infinity
+      : (subscribed ? Math.max(s.uploadLimitMB, cfg.limits.uploadSubscribedMB) : s.uploadLimitMB);
+    const limitBytes = effectiveLimitMB === Infinity ? Infinity : effectiveLimitMB * 1024 * 1024;
     if (req.file.size > limitBytes) {
       cleanup();
       const sizeMB = (req.file.size / 1024 / 1024).toFixed(1);
-      return res.status(413).json({ error: `Файл ${sizeMB} МБ превышает лимит ${s.uploadLimitMB} МБ.` });
+      return res.status(413).json({ error: `Файл ${sizeMB} МБ превышает лимит ${effectiveLimitMB} МБ.` });
     }
     const dir = String(req.body.dir || '').replace(/\\/g, '/').replace(/^\/+/, '');
     let dirFull; try { dirFull = safeJoin(req.projectRoot, dir); } catch { cleanup(); return res.status(403).json({ error: 'forbidden' }); }

@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>DarkArmy Dossier — self-hosted ИИ-рабочее пространство</title>
+<meta name="description" content="DarkArmy Dossier — проекты, файлы, совместное редактирование и ИИ-ассистент Darcus. Готовый хостинг по подписке или бесплатное развёртывание из GitHub.">
+<meta name="theme-color" content="#08090d">
+<meta property="og:title" content="DarkArmy Dossier">
+<meta property="og:description" content="Self-hosted рабочее пространство с ИИ. Готовый хостинг по подписке или свой сервер из GitHub.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="noise" aria-hidden="true"></div>
+<canvas id="stars" aria-hidden="true"></canvas>
+<header class="nav">
+  <a class="brand" href="./">
+    <img src="assets/icon-192.png" alt="">
+    <span>DarkArmy <b>Dossier</b></span>
+  </a>
+  <nav>
+    <a href="#features">Возможности</a>
+    <a href="#screens">Скриншоты</a>
+    <a href="#pricing">Тарифы</a>
+    <a href="#selfhost">Свой сервер</a>
+    <a href="#faq">FAQ</a>
+  </nav>
+  <div class="nav-cta">
+    <a class="ghost" href="https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier" target="_blank" rel="noopener">GitHub</a>
+    <a class="btn small" href="#pricing">Попробовать</a>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="glow g1"></div><div class="glow g2"></div>
+  <div class="hero-copy reveal">
+    <span class="eyebrow"><span class="dot"></span> self-hosted · AI · команда</span>
+    <h1>Твой <span class="grad">DarkArmy</span><br>Dossier</h1>
+    <p class="lead">Проекты, файлы, совместное редактирование в реальном времени и ИИ-ассистент <b>Darcus</b> — в одном защищённом пространстве. Готовый хостинг по подписке или бесплатное развёртывание из GitHub.</p>
+    <div class="hero-actions">
+      <a class="btn" href="#pricing">Готовая версия <span class="arrow">→</span></a>
+      <a class="btn ghost" href="#selfhost">Развернуть у себя</a>
+    </div>
+    <div class="hero-meta">
+      <span>AGPL-3.0</span><span class="sep"></span><span>Node.js · SQLite · Ollama</span><span class="sep"></span><span>PWA · APK · EXE</span>
+    </div>
+  </div>
+  <div class="hero-visual reveal delay">
+    <div class="window">
+      <div class="window-bar"><span></span><span></span><span></span><em>dossier — dark army</em></div>
+      <img src="assets/desktop-main.png" alt="Интерфейс DarkArmy Dossier">
+    </div>
+    <div class="float-card fc1"><b>Darcus</b><span>знает файлы проекта</span><i></i></div>
+    <div class="float-card fc2"><b>live</b><span>совместное редактирование</span><i></i></div>
+    <div class="float-card fc3"><b>offline</b><span>просмотр без интернета</span><i></i></div>
+  </div>
+  <div class="scroll-hint">scroll <span>↓</span></div>
+</section>
+
+<section class="logos reveal">
+  <p>Работает на вашем железе</p>
+  <div><span>Node.js</span><span>SQLite</span><span>Ollama</span><span>Silero</span><span>whisper</span><span>Docker-free</span></div>
+</section>
+
+<section id="features" class="section">
+  <div class="section-head reveal">
+    <span class="eyebrow">01 · возможности</span>
+    <h2>Всё, что нужно команде.<br><span class="dim">Без облачных компромиссов.</span></h2>
+  </div>
+  <div class="grid features">
+    <article class="card reveal"><div class="ico">🗂</div><h3>Проекты и файлы</h3><p>Дерево папок, Markdown/DOCX/XLSX/PDF, корзина, история версий и публичные ссылки.</p></article>
+    <article class="card reveal"><div class="ico">⚡</div><h3>Совместная работа</h3><p>SSE-синхронизация правок, канбан-задачи, роли, приглашения и журнал действий.</p></article>
+    <article class="card reveal"><div class="ico">🧠</div><h3>Darcus AI</h3><p>RAG по файлам и встроенным инструкциям, vision/OCR, голос, генерация документов и ACTION-действия.</p></article>
+    <article class="card reveal"><div class="ico">📱</div><h3>Везде с собой</h3><p>PWA на телефон и ПК, готовые APK и EXE. Установка в один клик, без App Store.</p></article>
+    <article class="card reveal"><div class="ico">🌐</div><h3>Свой сервер</h3><p>Ubuntu, nginx/Caddy, Let's Encrypt и бэкапы. Данные не уходят третьим лицам.</p></article>
+    <article class="card reveal"><div class="ico">🕶</div><h3>Приватность</h3><p>SQLite на диске, сессии, роли и projectGuard. Никакой телеметрии наружу по умолчанию.</p></article>
+  </div>
+</section>
+
+<section id="screens" class="section">
+  <div class="section-head reveal">
+    <span class="eyebrow">02 · интерфейс</span>
+    <h2>Тёмный, быстрый,<br><span class="dim">без лишнего.</span></h2>
+  </div>
+  <div class="shots">
+    <figure class="shot reveal"><img src="assets/desktop-main.png" alt="Рабочее пространство"><figcaption>Рабочее пространство и редактор</figcaption></figure>
+    <figure class="shot reveal"><img src="assets/admin-dashboard.png" alt="Админ-панель"><figcaption>Админ-панель и телеметрия</figcaption></figure>
+    <figure class="shot mobile reveal"><img src="assets/mobile-main.png" alt="Мобильная версия"><figcaption>PWA на телефоне</figcaption></figure>
+  </div>
+</section>
+
+<section class="section darcus">
+  <div class="darcus-copy reveal">
+    <span class="eyebrow">03 · Darcus</span>
+    <h2>ИИ, который<br>живёт <span class="grad">в твоих файлах</span></h2>
+    <p>Darcus читает проекты через RAG, понимает скриншоты, создаёт документы, ставит задачи и открывает нужные файлы. Локальная Ollama — данные не уходят в облако.</p>
+    <ul class="check">
+      <li>RAG по файлам проекта и встроенным инструкциям</li>
+      <li>OCR и полное описание изображений</li>
+      <li>ACTION: создать файл, задачу, найти, открыть</li>
+      <li>Голосовой ввод и озвучка Silero</li>
+    </ul>
+  </div>
+  <div class="terminal reveal delay">
+    <div class="t-head"><span></span><span></span><span></span><em>darcus ~ chat</em></div>
+    <div class="t-body">
+      <p><span class="t-user">you</span> сделай реферат по квантовым вычислениям в файл docs/quantum.md</p>
+      <p><span class="t-bot">darcus</span> Готово. Создаю документ <b>docs/quantum.md</b>…</p>
+      <p class="t-action">✓ Darcus создал документ: docs/quantum.md</p>
+      <p><span class="t-user">you</span> поставь задачу проверить источники до пятницы</p>
+      <p><span class="t-bot">darcus</span> Задача создана: «Проверить источники», срок 2026-12-04.</p>
+      <p class="t-type"><span></span></p>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" class="section">
+  <div class="section-head reveal">
+    <span class="eyebrow">04 · тарифы</span>
+    <h2>Два пути.<br><span class="dim">Один Dossier.</span></h2>
+  </div>
+  <div class="pricing">
+    <article class="price-card reveal">
+      <div class="tag">SELF-HOSTED</div>
+      <h3>Свой сервер</h3>
+      <div class="price">0 ₽<small>/ навсегда</small></div>
+      <p>Разверните на своём Ubuntu или Windows. Полный код и документация на GitHub.</p>
+      <ul class="check">
+        <li>Все функции без ограничений</li>
+        <li>Свои данные и бэкапы</li>
+        <li>Обновления из GitHub</li>
+        <li>Darcus через локальную Ollama</li>
+      </ul>
+      <a class="btn ghost wide" href="#selfhost">Инструкция →</a>
+    </article>
+    <article class="price-card featured reveal delay">
+      <div class="tag">HOSTED · PRO</div>
+      <h3>Готовая версия</h3>
+      <div class="price">299 ₽<small>/ месяц</small></div>
+      <p>Мы уже развернули Dossier: заходите и работайте. Подходит командам без своего сервера.</p>
+      <ul class="check">
+        <li>Доступ по адресу и вашей учётке</li>
+        <li>Подписка: лимит файла <b>500 МБ</b></li>
+        <li>Обновления и HTTPS из коробки</li>
+        <li>Помощь с переносом проектов</li>
+      </ul>
+      <a class="btn wide" id="hostedCta" href="http://147.45.78.20:7561/" target="_blank" rel="noopener">Открыть готовую версию →</a>
+      <a class="mini" href="https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/issues/new?template=hosted-access.yml" target="_blank" rel="noopener">Нет доступа? Запросить подписку</a>
+    </article>
+  </div>
+  <div class="honest reveal">Оплата и выдача кодов подписки — вручную через администратора. Платёжного шлюза в open-source версии нет.</div>
+</section>
+
+<section id="selfhost" class="section selfhost">
+  <div class="section-head reveal">
+    <span class="eyebrow">05 · свой сервер</span>
+    <h2>Разверни за <span class="grad">5 минут</span></h2>
+    <p class="dim">Ubuntu 22.04/24.04, Node.js 20+, открытые 80/443. Остальное — скрипт и документация.</p>
+  </div>
+  <div class="cmd-card reveal">
+    <div class="cmd-head"><span>bash</span><button class="copy" data-copy="git clone https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier.git
+cd darkarmy-dossier
+sudo DOMAIN=dossier.example.com bash deploy/install-ubuntu.sh">copy</button></div>
+    <pre><code><span class="c-dim"># 1. клонируй</span>
+git clone https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier.git
+<span class="c-dim"># 2. разверни</span>
+cd darkarmy-dossier
+sudo DOMAIN=dossier.example.com bash deploy/install-ubuntu.sh
+<span class="c-dim"># 3. HTTPS</span>
+sudo certbot --nginx -d dossier.example.com</code></pre>
+  </div>
+  <div class="quick-links reveal">
+    <a href="https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier" target="_blank" rel="noopener">GitHub репозиторий ↗</a>
+    <a href="https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/blob/main/documenti/10-deployment-ubuntu.md" target="_blank" rel="noopener">Гайд по Ubuntu ↗</a>
+    <a href="https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/releases" target="_blank" rel="noopener">APK / EXE ↗</a>
+    <a href="https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/blob/main/deploy/free-domain.md" target="_blank" rel="noopener">Бесплатный домен ↗</a>
+  </div>
+</section>
+
+<section class="section stats">
+  <div class="stat reveal"><b data-count="500">0</b><span>МБ файл по подписке</span></div>
+  <div class="stat reveal"><b data-count="50">0</b><span>МБ бесплатно</span></div>
+  <div class="stat reveal"><b data-count="9">0</b><span>RAG-документов Darcus</span></div>
+  <div class="stat reveal"><b data-count="3">0</b><span>платформы: web / APK / EXE</span></div>
+</section>
+
+<section id="faq" class="section faq">
+  <div class="section-head reveal"><span class="eyebrow">06 · вопросы</span><h2>Коротко о главном</h2></div>
+  <details class="reveal"><summary>Где хранятся данные?</summary><p>На вашем сервере: SQLite в <code>data/dossier.db</code>, файлы проектов — в каталоге <code>PROJECTS_ROOT</code>. Облака и сторонние API не используются по умолчанию.</p></details>
+  <details class="reveal"><summary>Нужен ли мощный сервер?</summary><p>Для веба хватит 1–2 ГБ RAM. Для локального Darcus — Ollama и GPU/CPU; можно отключить ИИ и использовать Dossier как файловую базу.</p></details>
+  <details class="reveal"><summary>Как получить подписку?</summary><p>Готовая версия — по подписке: администратор выдаёт код, который активируется в профиле. Для своего сервера подписка не нужна.</p></details>
+  <details class="reveal"><summary>Работает ли офлайн?</summary><p>Да, в PWA/HTTPS: включите офлайн-режим в профиле, скачайте проекты и просматривайте без сети. Редактирование офлайн отключено во избежание конфликтов.</p></details>
+  <details class="reveal"><summary>Можно ли поставить на телефон?</summary><p>Android — PWA из Chrome или готовый APK. iOS — «На экран Домой» из Safari. Windows — PWA, EXE-лаунчер или Electron.</p></details>
+</section>
+
+<section class="final reveal">
+  <div class="final-inner">
+    <span class="eyebrow">готов начать?</span>
+    <h2>Собери свой <span class="grad">DarkArmy</span></h2>
+    <div class="hero-actions centered">
+      <a class="btn" id="finalHosted" href="http://147.45.78.20:7561/" target="_blank" rel="noopener">Открыть hosted →</a>
+      <a class="btn ghost" href="https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier" target="_blank" rel="noopener">Забрать код</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="brand"><img src="assets/icon-192.png" alt=""><span>DarkArmy <b>Dossier</b></span></div>
+  <p>Open-source под AGPL-3.0. Сделано для тех, кто держит данные у себя.</p>
+  <div class="foot-links">
+    <a href="https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/blob/main/documenti/README.md" target="_blank" rel="noopener">Документация</a>
+    <a href="https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/blob/main/AGENTS.md" target="_blank" rel="noopener">Для ИИ-агентов</a>
+    <a href="#pricing">Тарифы</a>
+  </div>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>

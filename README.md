@@ -1,263 +1,142 @@
+<div align="center">
+
+<img src="public/icons/icon-192.png" width="96" alt="DarkArmy Dossier">
+
 # DarkArmy Dossier
 
-Командная работа с файлами: проекты и роли, предпросмотр и редактирование документов,
-чаты и обращения, корзина и публичные ссылки, админ-панель и локальный ИИ-ассистент Darcus.
+**Self-hosted рабочее пространство с ИИ: проекты, файлы, совместное редактирование и Darcus.**
 
-Работает локально без облаков: данные лежат на диске, ИИ — через локальную Ollama.
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-ff3b55.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%E2%89%A520-3c873a.svg)](package.json)
+[![Tests](https://img.shields.io/badge/tests-50%2F50-brightgreen.svg)](test)
+[![PWA](https://img.shields.io/badge/PWA-ready-5a67d8.svg)](public/manifest.webmanifest)
+[![Hosted](https://img.shields.io/badge/hosted-pro%20subscription-ff3b55.svg)](https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/issues/new?template=hosted-access.yml)
+[![Docs](https://img.shields.io/badge/docs-36k%20words-9aa2b3.svg)](documenti/README.md)
 
-## Возможности
+[Сайт проекта](https://EvGeNkA-PLUSsss.github.io/darkarmy-dossier/) ·
+[Документация](documenti/README.md) ·
+[APK / EXE](release/README.md) ·
+[Для ИИ-агентов](AGENTS.md)
 
-- **Проекты и доступ**: роли `creator` / `editor` / `member`, приглашения по кодам,
-  баны и мьюты, журнал действий с откатом.
-- **Файлы**: дерево, создание/переименование/перемещение, корзина на 14 дней, история версий с diff,
-  предпросмотр Markdown, изображений, DOCX, XLSX, PDF, публичные share-ссылки с TTL.
-- **Редактор**: Markdown с превью, тулбар, черновики в localStorage, автосохранение,
-  совместное редактирование (SSE), печать.
-- **Общение**: общий чат, чат проекта, поддержка (тикеты), вложения,
-  запросы на изменение файлов и жалобы.
-- **Поиск**: глобальный — файлы (имя/содержимое, keyword + семантика, OCR), проекты, сообщения общего и проектных чатов, задачи и люди; с учётом прав доступа и переходами в найденный объект.
-- **Darcus AI**: чат со стримингом, RAG по проектам, веб/Вики, rewrite/translate/summarize,
-  генерация документов, ACTION-блоки (создание/изменение файлов с подтверждением),
-  OCR/vision, TTS (серверный или браузерный), STT через Whisper.
-- **Задачи**: список в чате проекта и канбан-доска (todo/doing/done) с drag&drop, исполнителями и порядком.
-- **Уведомления**: центр событий (тикеты, запросы, жалобы, добавление в проект, @упоминания) с badge и переходом к объекту.
-- **Экспорт/импорт**: JSON-снимок метаданных (пользователи, проекты, документы) и восстановление с подтверждением.
-- **Админка**: дашборд состояния (БД, размеры, бэкапы, модели Ollama), пользователи,
-  приглашения, наказания, журнал, настройки, телеметрия, реклама, подписки, конфиг Darcus.
+</div>
 
-## Требования
+---
 
-- Node.js **20+** (проверено на 24);
-- Windows/Linux/macOS; для ИИ — [Ollama](https://ollama.com) с моделями (см. ниже);
-- каталог для файлов проектов (по умолчанию `F:/Проекты`).
+## Два способа начать
 
-## Быстрый старт
+| | **Готовая версия (Hosted Pro)** | **Свой сервер (Self-hosted)** |
+|---|---|---|
+| Что это | Мы развернули Dossier — заходите и работайте | Полный код на вашем Ubuntu/Windows |
+| Подписка | Платная, выдаётся администратором | Не нужна |
+| Лимит файла | **500 МБ** | настраивается |
+| Данные | на нашем сервере (можно перенести) | только у вас |
+| HTTPS/PWA | из коробки | nginx/Caddy + Let's Encrypt |
 
+**Hosted:** https://147-45-78-20.sslip.io/ · [Запросить доступ](https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/issues/new?template=hosted-access.yml)
+
+**Self-hosted:**
 ```bash
-npm install
-cp .env.example .env      # и заполнить SESSION_SECRET, PROJECTS_ROOT
-npm start                 # http://127.0.0.1:7561
-```
-
-Первый запуск создаёт администратора `admin`:
-- если задан `ADMIN_PASSWORD` — с этим паролем;
-- иначе случайный пароль печатается **в консоль** (в лог-файл не пишется).
-Смените пароль после первого входа.
-
-### Обязательные переменные окружения
-
-| Переменная | Назначение |
-|---|---|
-| `NODE_ENV` | `production` включает secure-cookie, HSTS и прочий прод-харденинг |
-| `SESSION_SECRET` | секрет подписи сессий, обязателен в production |
-| `PROJECTS_ROOT` | каталог с файлами проектов |
-| `PORT`, `BIND_HOST` | адрес прослушивания (по умолчанию `127.0.0.1:7561`) |
-| `DATA_DIR` | каталог метаданных (по умолчанию `./data`) |
-| `TRUST_PROXY` | `false` / `true` / число хопов / список IP для reverse proxy |
-| `ADMIN_PASSWORD` | стартовый пароль администратора (опционально) |
-
-Полный список — в [`.env.example`](.env.example).
-
-### Доступ из локальной сети (LAN)
-
-По умолчанию сервер слушает только `127.0.0.1` — с других устройств он недоступен.
-Чтобы открыть его в домашней/офисной сети:
-
-1. В `.env` поставьте `BIND_HOST=0.0.0.0`.
-2. Разрешите порт в брандмауэре Windows (PowerShell **от администратора**), ограничив
-   доступ своей подсетью:
-
-   ```powershell
-   New-NetFirewallRule -DisplayName "DarkArmy Dossier (LAN 7561)" `
-     -Direction Inbound -Protocol TCP -LocalPort 7561 -Action Allow `
-     -Profile Private -RemoteAddress 192.168.120.0/24
-   ```
-
-3. Узнайте IP (`ipconfig`) и откройте `http://<IP>:7561` с другого устройства сети.
-
-Важно: это **HTTP без шифрования**. Открывайте только в доверенной локальной сети и
-не публикуйте `0.0.0.0` в интернет напрямую — для интернета используйте HTTPS
-reverse proxy из [deploy/README.md](deploy/README.md). Если сеть помечена как
-«Общественная» (Public), правило для Private-профиля не сработает — переключите
-профиль сети или добавьте правило для Public осознанно.
-
-#### HTTPS для микрофона на LAN
-
-Браузер даёт доступ к микрофону только в secure context (HTTPS или localhost).
-Dossier умеет поднимать **дополнительный HTTPS-порт** с тем же приложением:
-
-1. Сгенерируйте самоподписанный сертификат (Windows PowerShell):
-   ```powershell
-   New-SelfSignedCertificate -Subject "CN=DarkArmy Dossier LAN" `
-     -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(2) `
-     -TextExtension @("2.5.29.17={text}DNS=localhost&IPAddress=192.168.120.128")
-   ```
-   и экспортируйте PFX, затем пропишите в `.env`: `HTTPS_PORT=7562`,
-   `HTTPS_PFX=data/tls/dossier.pfx`, `HTTPS_PFX_PASS=<пароль PFX>`.
-   Разрешите TCP 7562 в брандмауэре (Private).
-2. Откройте `https://192.168.120.128:7562` и примите предупреждение сертификата
-   (или установите `.cer` из `audit/tls/` как доверенный корень — тогда
-   предупреждения не будет).
-
-Альтернатива без HTTPS: если в админке включён серверный Whisper, кнопка
-микрофона по HTTP открывает **системный диктофон** телефона (`<input capture>`),
-запись уходит на распознавание. TTS при этом работает через браузер или Silero.
-
-## Darcus (локальный ИИ)
-
-```bash
-ollama pull gemma4:e4b          # чат и vision
-ollama pull nomic-embed-text    # эмбеддинги для семантического поиска
-```
-
-Модели задаются в **Админка → Darcus** (или `data/ai-config.json`):
-`chatModel`, `visionModel`, `embedModel`, `rerankModel`.
-Vision-модель для OCR/анализа фото должна поддерживать изображения: `gemma4:e4b`,
-`qwen2.5vl:3b`, `llava`, `minicpm-v`, `pixtral` и т.п. (проверяется по имени и
-через `/api/show` Ollama). Для запросов с изображением Darcus использует компактный
-промпт — так qwen2.5vl стабильно распознаёт текст.
-Если embedding-модель недоступна, семантика деградирует до keyword-поиска (без падений).
-Whisper и TTS включаются переменными `WHISPER_BIN`, `WHISPER_MODEL`, `TTS_URL`;
-без них голосовой ввод отключается, а озвучка идёт через браузер.
-
-### Голосовой режим
-
-В чате Darcus есть кнопка **«Голос»** (иконка динамика): ответы озвучиваются, а
-распознанная речь вставляется в поле ввода. **Авто-отправка распознанного включена
-по умолчанию** — сообщение уходит сразу, в голосовом режиме Darcus отвечает
-кратко (1–3 предложения, без списков/кода). Кнопка с иконкой отправки рядом с
-«Голос» отключает авто-отправку — тогда текст остаётся в поле для проверки.
-Кнопка **«⚡ Авто»** отключает подтверждение действий Darcus (по умолчанию каждое
-изменение файла подтверждается).
-
-- **STT**: если заданы `WHISPER_BIN` и `WHISPER_MODEL` — используется Whisper;
-  если в админке включён **faster-whisper** — локальный Whisper на Python;
-  иначе браузерное Web Speech API (Chrome/Edge, нужен HTTPS или localhost).
-  Для локального Whisper включены **hotwords** и начальный prompt по терминам
-  Dossier («реферат», «документ», «Darcus», «распознавание»…), а также
-  автоисправление типичных ошибок (`ресират` → `реферат`, `дакумент` → `документ`).
-- **TTS**: по умолчанию браузерный синтез (выбирается русский голос ОС). Для
-  качественного голоса используется локальный **Silero v5.6 RU** (сервер
-  `scripts/silero_tts_server.py`, голоса `aidar/baya/kseniya/xenia/eugene`).
-  Перед синтезом латиница и аббревиатуры переводятся в кириллицу
-  (`Darcus Intelligence` → «Даркус Интеллидженс», `README.md` → «Ридми точка мд»,
-  `5.6` → «пять точка шесть»), иначе Silero RU пропускает такие слова.
-  В админке (**Голос**) есть кнопки «Установить Whisper (авто)» и
-  «Установить/запустить Silero» — они ставят faster-whisper и запускают Silero TTS.
-  TTS/STT доступны без подписки (локальные ресурсы), но с rate-limit.
-- **Микрофон**: браузер разрешает `getUserMedia` только на `localhost` или HTTPS.
-  По HTTP в локальной сети (`http://192.168.x.x:7561`) есть два пути:
-  1) открыть `https://192.168.120.128:7562` (встроенный HTTPS с самоподписанным
-     сертификатом, см. раздел LAN выше);
-  2) если серверный Whisper включён, кнопка микрофона открывает **системный
-     диктофон** телефона, а запись распознаётся на сервере — это работает и по HTTP.
-  TTS по HTTP работает всегда (браузерный синтез или Silero-сервер).
-
-## Данные и бэкапы
-
-- **Метаданные**: SQLite `data/dossier.db` (пользователи, проекты, журнал изменений,
-  телеметрия, сессии). При первом запуске данные из старых `data/*.json` автоматически
-  переносятся в БД, JSON остаются архивом, а перед миграцией создаётся копия
-  `data/backup-pre-sqlite-<дата>/`.
-- **Прочие настройки** (инвайты, наказания, чаты, подписки, реклама, Darcus-конфиг)
-  пока хранятся в JSON с атомарной записью и `.bak`.
-- **Файлы проектов**: `PROJECTS_ROOT`.
-- **Бэкап**: `npm run backup` — консистентная копия SQLite через backup API,
-  JSON-архив и файлы проектов в `../backups/<дата>/` с ротацией (по умолчанию 7 копий).
-  Параметры: `--keep 14`, `--no-projects`, `--dest D:\backups`.
-- **Сессии** хранятся в SQLite и переживают перезапуск сервера (при стабильном `SESSION_SECRET`).
-
-## Тесты
-
-```bash
-npm test     # node:test: юниты, миграция SQLite, API-матрица безопасности
-npm run check
-```
-
-## Production
-
-Пошаговая инструкция: [deploy/README.md](deploy/README.md).
-
-Кратко:
-1. `.env`: `NODE_ENV=production`, `SESSION_SECRET`, `PROJECTS_ROOT`, `BIND_HOST=127.0.0.1`, `TRUST_PROXY=1`.
-2. HTTPS reverse proxy — готовые конфиги `deploy/Caddyfile` (автосертификаты) или `deploy/nginx.conf`.
-3. Автозапуск — `deploy/install-task.ps1` (Windows), `deploy/darkarmy-dossier.service` (systemd) или `deploy/ecosystem.config.js` (PM2).
-4. Ежедневный бэкап — `npm run backup` или `deploy/install-backup-task.ps1`.
-## Безопасность
-
-- Файлы проектов отдаются по allow-list: изображения/PDF — инлайн, HTML/JS/SVGZ/XML и
-  неизвестные типы — как `text/plain` или `attachment`; SVG — с закрытым CSP.
-- CSP без `unsafe-inline` для скриптов, все библиотеки вендорены в `public/vendor`.
-- Сессии: httpOnly + SameSite=strict, secure в production; rate-limit по пользователю.
-- Журнал изменений редактирует содержимое секретных файлов.
-- Перед публикацией в интернет: смените пароль admin, закройте `data/` правами ОС,
-  включите HTTPS, проверьте `TRUST_PROXY`.
-
-## Структура
-
-```
-server.js          Express API (роуты, middleware, бизнес-логика)
-src/storage.js     SQLite-слой: пользователи, проекты, документы, журнал, телеметрия, сессии, уведомления
-src/util.js        общие утилиты: safeJoin, пароли, rate-limit, отдача файлов
-src/routes/        вынесенные роутеры: system (админка/бэкап), history, notifications
-darcus.js          Ollama, RAG, OCR/vision, TTS/STT, промпты
-config.js          конфигурация из env
-logger.js          логи и access-log с ротацией
-extract-text.js    извлечение текста из файлов
-scripts/backup.js  консистентный бэкап БД + данных + проектов
-deploy/            production: Caddy/nginx, systemd, PM2, задачи Windows, гайд
-public/            SPA без сборки: index.html, app.js, admin.js, style.css, vendor/
-public/js/         модули фронтенда: search.js, history.js, notifications.js, ui-dialog.js, modal-a11y.js
-test/              node:test: unit + storage + API
-data/              SQLite-БД, JSON-архив, вложения (не коммитится)
-```
-
-## Документация
-
-- [Полная документация проекта](documenti/README.md) — архитектура, API, БД, ИИ, совместная работа, админка, деплой.
-- [Установка](documenti/02-installation.md)
-- [Пользовательский гайд](documenti/03-user-guide.md)
-- [API](documenti/04-api.md)
-- [Развёртывание на Ubuntu](documenti/10-deployment-ubuntu.md)
-- [ПК/телефон/PWA](documenti/09-desktop-mobile-pwa.md)
-- [Аудит и план развития](docs/ROADMAP.md)
-- [Приёмка production-готовности](docs/ACCEPTANCE.md)
-- [Развёртывание (deploy/)](deploy/README.md)
-- [.env.example](.env.example)
-
-### Приложение на ПК и телефон
-
-- PWA уже встроено: при открытии по HTTPS (или localhost) появляется «Установить приложение».
-- **Готовые сборки:** `release/DarkArmyDossier.exe` (Windows-лаунчер) и
-  `release/DarkArmyDossier.apk` (Android WebView-клиент). Подробнее — [release/README.md](release/README.md).
-- Windows-окно без установки: `desktop\open-windows-app.cmd`.
-- Electron-сборка: `desktop/electron` (`npm install && npm run dist`). Подробнее — [desktop/README.md](desktop/README.md).
-- Android: «Добавить на главный экран» в Chrome либо установить APK.
-
-### Офлайн-режим и RAG
-
-- **Офлайн-режим** (Профиль → «Офлайн-режим»): скачивает проекты/файлы и позволяет
-  только просматривать их без интернета; редактирование отключается. Нужен HTTPS/localhost.
-- **RAG-инструкции Darcus**: папка `ai-knowledge/` автоматически подмешивается в контекст,
-  чтобы ИИ знал интерфейс, действия, офлайн, микрофон, деплой и т.д.
-- **Бесплатный домен для IP**: [deploy/free-domain.md](deploy/free-domain.md)
-  (sslip.io, DuckDNS, Cloudflare Tunnel, Tailscale Funnel).
-
-### Быстрый деплой на Ubuntu
-
-```bash
+git clone https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier.git
+cd darkarmy-dossier
 sudo DOMAIN=dossier.example.com bash deploy/install-ubuntu.sh
 sudo certbot --nginx -d dossier.example.com
 ```
 
-Подробности и ручные шаги — [documenti/10-deployment-ubuntu.md](documenti/10-deployment-ubuntu.md).
+---
 
-### Скриншоты
+## Возможности
 
-- [Основной интерфейс](docs/screenshots/desktop-main.png)
-- [Админ-дашборд](docs/screenshots/admin-dashboard.png)
-- [Мобильная версия](docs/screenshots/mobile-main.png)
+| | |
+|---|---|
+| **Проекты и роли** | создатель / редактор / участник, приглашения, баны/мьюты, журнал с откатом |
+| **Файлы** | дерево, загрузка до 500 МБ по подписке, корзина 14 дней, история версий, PDF/DOCX/XLSX, share-ссылки |
+| **Редактор** | Markdown + превью, черновики, автосохранение, общий доступ |
+| **Совместная работа** | SSE-синхронизация правок, несколько устройств одного аккаунта, канбан-задачи |
+| **Darcus AI** | Ollama, RAG по проектам и встроенным инструкциям, OCR/vision, TTS/STT, ACTION-действия |
+| **Офлайн-режим** | скачивание проектов/файлов, просмотр без интернета, редактирование отключено |
+| **Уведомления** | центр событий, тикеты, запросы, @упоминания |
+| **Админка** | пользователи, инвайты, наказания, журнал, телеметрия, реклама, подписки, баги, голос |
+| **Приложения** | PWA, Android APK, Windows EXE, Electron-обёртка |
+| **Приватность** | SQLite на диске, без облаков и внешних API по умолчанию |
+
+### Darcus умеет
+
+- отвечать по файлам проекта через RAG;
+- распознавать текст на скриншотах и делать полное описание;
+- создавать документы (`generate_doc`) и небольшие файлы (`create`), редактировать/удалять/перемещать;
+- открывать файлы (`open`), создавать задачи (`task`), запускать поиск (`search`);
+- отвечать голосом (Silero) и принимать речь (faster-whisper);
+- знать интерфейс и правила приложения из `ai-knowledge/`.
+
+---
+
+## Скриншоты
+
+<p align="center">
+  <img src="docs/screenshots/desktop-main.png" alt="Рабочее пространство" width="820">
+</p>
+<p align="center">
+  <img src="docs/screenshots/mobile-main.png" alt="Мобильная версия" width="260">
+  <img src="docs/screenshots/admin-dashboard.png" alt="Админ-панель" width="520">
+</p>
+
+---
+
+## Стек
+
+- **Backend:** Node.js 20+, Express 5, `node:sqlite` (SQLite, WAL), SSE
+- **Frontend:** vanilla JS SPA без сборки, Markdown, PWA/service worker
+- **AI:** Ollama (`gemma4:e4b`, `qwen2.5vl:3b`, `nomic-embed-text`), локальный Silero TTS, faster-whisper
+- **Файлы:** обычная ФС (`PROJECTS_ROOT`), SQLite (`data/dossier.db`)
+- **Деплой:** systemd + nginx/Caddy, Let's Encrypt, бэкапы
+
+---
+
+## Быстрый старт (Windows)
+
+```powershell
+npm install
+copy .env.example .env
+# заполните SESSION_SECRET, PROJECTS_ROOT
+npm start
+# http://127.0.0.1:7561
+```
+
+Требования: Node.js 20+, для Darcus — Ollama, для голоса — Python 3.10 + Silero/whisper.
+
+---
+
+## Приложения
+
+| Платформа | Как получить |
+|---|---|
+| Windows | `release/DarkArmyDossier.exe` или PWA |
+| Android | `release/DarkArmyDossier.apk` или PWA |
+| iOS | Safari → «На экран Домой» |
+| Любая | открыть по HTTPS и установить PWA |
+
+В APK/EXE при первом запуске вводится адрес сервера (`ip:port` или домен).
+
+---
+
+## Документация
+
+- [Полная документация](documenti/README.md) — 16 файлов, ~36 000 слов
+- [Архитектура](documenti/01-architecture.md) · [API](documenti/04-api.md) · [БД](documenti/05-data-model.md)
+- [Darcus AI](documenti/06-ai-darcus.md) · [Совместная работа](documenti/07-collaboration.md)
+- [Ubuntu-деплой](documenti/10-deployment-ubuntu.md) · [Бесплатный домен](deploy/free-domain.md)
+- [PWA/APK/EXE](documenti/09-desktop-mobile-pwa.md) · [FAQ](documenti/14-faq.md)
+- [Для ИИ-агентов](AGENTS.md)
+
+---
+
+## Безопасность
+
+- не коммитьте `.env`, `data/`, `backups/`, сертификаты и ключи;
+- в production обязательны `SESSION_SECRET`, `NODE_ENV=production`, HTTPS и `TRUST_PROXY=1`;
+- не выставляйте порт 7561 напрямую в интернет — только через nginx/Caddy;
+- см. [SECURITY.md](SECURITY.md) и [08-security.md](documenti/08-security.md).
 
 ## Лицензия
 
-AGPL-3.0-only.
+[AGPL-3.0-only](LICENSE). Используйте, форкайте, разворачивайте; изменения в сетевом сервисе должны быть открыты.

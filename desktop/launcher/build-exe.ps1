@@ -10,6 +10,6 @@ $outDir = Join-Path $root 'release'
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $out = Join-Path $outDir 'DarkArmyDossier.exe'
 & $csc /nologo /target:winexe /optimize+ /platform:anycpu "/win32icon:$icon" "/out:$out" `
-  (Join-Path $PSScriptRoot 'Program.cs') /r:System.Windows.Forms.dll /r:System.Net.Http.dll
+  (Join-Path $PSScriptRoot 'Program.cs') /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Net.Http.dll
 if ($LASTEXITCODE -ne 0) { throw 'csc failed' }
 Get-Item $out | Select-Object FullName, Length

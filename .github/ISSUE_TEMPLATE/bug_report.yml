@@ -1,0 +1,26 @@
+name: Баг
+description: Сообщить об ошибке
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Что случилось
+      description: Шаги, ожидаемое и фактическое поведение
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Версия / коммит
+      placeholder: 91eec18 / 1.1.0
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Где
+      options: [Web/PWA, APK, EXE, Сервер, Другое]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи/скриншот

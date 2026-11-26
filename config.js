@@ -54,6 +54,8 @@ module.exports = {
   },
   limits: {
     uploadDefaultMB: 50,
+    // Подписка поднимает лимит одного файла до 500 МБ (см. /api/upload).
+    uploadSubscribedMB: parseInt(process.env.UPLOAD_SUBSCRIBED_MB, 10) || 500,
     uploadMaxMB: 100_000,
     attachmentMaxBytes: 25 * 1024 * 1024,
     jsonBodyMax: '20mb',

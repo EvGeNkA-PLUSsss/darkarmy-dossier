@@ -1,0 +1,35 @@
+name: Запрос доступа к Hosted Pro
+description: Получить доступ к готовой версии DarkArmy Dossier по подписке
+title: "[Hosted] Доступ для команды"
+labels: ["hosted-access"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Заполните заявку. Администратор свяжется и выдаст учётную запись/код подписки.
+        **Не присылайте пароли в issue.**
+  - type: input
+    id: name
+    attributes:
+      label: Имя/команда
+      placeholder: Например, DarkArmy
+    validations:
+      required: true
+  - type: input
+    id: users
+    attributes:
+      label: Сколько пользователей
+      placeholder: "3"
+    validations:
+      required: true
+  - type: textarea
+    id: usecase
+    attributes:
+      label: Зачем нужен Dossier
+      placeholder: Проекты, файлы, ИИ, совместная работа...
+  - type: input
+    id: contact
+    attributes:
+      label: Контакт для связи (Telegram/email)
+    validations:
+      required: true

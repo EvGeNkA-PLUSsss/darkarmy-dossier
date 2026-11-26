@@ -823,8 +823,8 @@ async function updateUploadLabel() {
     else uploadBtn.innerHTML = `${icon('upload','sm')} Загрузить`;
     // Лимит — в подсказке, чтобы длинная подпись не обрезалась в узком сайдбаре.
     uploadBtn.title = (state.user.role !== 'admin' && s.uploadLimitMB)
-      ? `Загрузить файл с компьютера (до ${s.uploadLimitMB} МБ)`
-      : 'Загрузить файл с компьютера';
+      ? `Загрузить файл (до ${s.uploadLimitMB} МБ; по подписке — до 500 МБ)`
+      : 'Загрузить файл с компьютера (по подписке — до 500 МБ)';
   } catch {}
 }
 
