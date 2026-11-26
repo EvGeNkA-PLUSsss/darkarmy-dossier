@@ -305,6 +305,7 @@ WHISPER_LANG=ru
 | Параметр | Значение | Где |
 |---|---|---|
 | `limits.uploadDefaultMB` | 50 | `config.js` |
+| `limits.uploadSubscribedMB` | 500 (по подписке; env `UPLOAD_SUBSCRIBED_MB`) | `config.js`, `server.js` |
 | `limits.uploadMaxMB` | 100 000 (жёсткий лимит multer — 2 ГБ) | `config.js`, `server.js` |
 | `limits.attachmentMaxBytes` | 25 МБ | `config.js` |
 | `limits.jsonBodyMax` | `20mb` | `config.js` |

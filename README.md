@@ -13,7 +13,7 @@
 [![Hosted](https://img.shields.io/badge/hosted-pro%20subscription-ff3b55.svg)](https://github.com/EvGeNkA-PLUSsss/darkarmy-dossier/issues/new?template=hosted-access.yml)
 [![Docs](https://img.shields.io/badge/docs-36k%20words-9aa2b3.svg)](documenti/README.md)
 
-[Сайт проекта](https://EvGeNkA-PLUSsss.github.io/darkarmy-dossier/) ·
+[Сайт проекта](https://evgenka-plussss.github.io/darkarmy-dossier/) ·
 [Документация](documenti/README.md) ·
 [APK / EXE](release/README.md) ·
 [Для ИИ-агентов](AGENTS.md)
