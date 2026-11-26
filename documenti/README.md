@@ -201,6 +201,7 @@ TRUST_PROXY=false
 | 14 | [13-admin-guide.md](13-admin-guide.md) | все вкладки админки, роли, инвайты, наказания, реклама, баги | администраторам |
 | 15 | [14-faq.md](14-faq.md) | 25 частых вопросов | всем |
 | 16 | [CHANGELOG.md](CHANGELOG.md) | история изменений по git log | всем |
+| 17 | [15-hosting.md](15-hosting.md) | тарифы Web/AI, hosted, мост Ollama | администраторам |
 
 Смежные документы в репозитории (не входят в `documenti/`):
 
@@ -276,4 +277,5 @@ TRUST_PROXY=false
 - **Бесплатный домен для IP** — [deploy/free-domain.md](../deploy/free-domain.md).
 - **Микрофон на HTTP** — [09-desktop-mobile-pwa.md](09-desktop-mobile-pwa.md#микрофон-на-http).
 - **Новые действия Darcus** (`open`, `task`, `search`) — [06-ai-darcus.md](06-ai-darcus.md#rag-по-встроенным-инструкциям-приложения).
+- **Хостинг, тарифы 0/250 ₽ и мост Ollama** — [15-hosting.md](15-hosting.md).
 - Вопросы «а можно ли…» — [14-faq.md](14-faq.md).

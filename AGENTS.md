@@ -94,6 +94,7 @@ CI — GitHub Actions: `.github/workflows/test.yml` (Windows + Ubuntu).
 - Ubuntu: `deploy/install-ubuntu.sh`, `deploy/nginx.conf`, systemd unit.
 - HTTPS: Let's Encrypt; бесплатный домен — `deploy/free-domain.md`.
 - Не публикуйте `7561` напрямую; только reverse proxy.
+- Hosted AI использует безопасный SSH-мост к Ollama на ПК: `bridge/README.md`.
 - Бэкап: `npm run backup` (БД + данные + projects).
 
 ## Git/PR
